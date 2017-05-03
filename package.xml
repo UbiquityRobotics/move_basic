@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>move_basic</name>
+  <version>0.0.1</version>
+  <description>Simple navigation package</description>
+
+  <maintainer email="jimv@mrjim.com">Jim Vaughan</maintainer>
+
+  <license>BSD</license>
+
+  <author email="jimv@mrjim.com">Jim Vaughan</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2</depend>
+  <depend>geometry_msgs</depend>
+
+</package>
