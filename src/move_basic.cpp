@@ -103,6 +103,13 @@ static double rad2deg(double rad)
     return rad * 180.0 / M_PI;
 }
 
+// Get the sign of a number
+
+static int sign(double n)
+{
+    return (n <0 ? -1 : 1);
+}
+
 
 // Adjust angle to be between -PI and PI
 
@@ -136,7 +143,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 {
     ros::NodeHandle nh("~");
 
-    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.1);
+    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.05);
     nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
@@ -203,9 +210,10 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     tf2::Transform goal;
     tf2::fromMsg(msg->target_pose.pose, goal);
     std::string frameId = msg->target_pose.header.frame_id;
+
     // Needed for RobotCommander
     if (frameId[0] == '/')
-        frameId = frameId.substr(1);  
+        frameId = frameId.substr(1)
 
     double x, y, yaw;
     getPose(goal, x, y, yaw);
@@ -299,7 +307,7 @@ bool MoveBasic::handleRotation()
         return true;
     }
     double requestedYaw = atan2(linear.y(), linear.x());
- 
+
     if (requestedYaw == 0) {
         return true;
     }
@@ -333,6 +341,9 @@ bool MoveBasic::rotateAbs(double requestedYaw)
     bool done = false;
     ros::Rate r(50);
 
+    int oscillations = 0;
+    double prevAngleRemaining = 0;
+
     while (!done && ros::ok()) {
         ros::spinOnce();
         r.sleep();
@@ -350,7 +361,8 @@ bool MoveBasic::rotateAbs(double requestedYaw)
 
         double speed = std::max(minAngularVelocity,
             std::min(maxAngularVelocity,
-              std::sqrt(2.0 * angularAcceleration * std::abs(angleRemaining))));
+              std::sqrt(2.0 * angularAcceleration *
+                (std::abs(angleRemaining) - angularTolerance))));
 
         double velocity = 0;
 
@@ -361,6 +373,11 @@ bool MoveBasic::rotateAbs(double requestedYaw)
             velocity = speed;
         }
 
+        if (sign(prevAngleRemaining) != sign(angleRemaining)) {
+            oscillations++;
+        }
+        prevAngleRemaining = angleRemaining;
+
         if (actionServer->isNewGoalAvailable()) {
             ROS_INFO("Stopping rotation due to new goal");
             done = true;
@@ -369,7 +386,7 @@ bool MoveBasic::rotateAbs(double requestedYaw)
 
         //ROS_INFO("%f %f %f", rad2deg(angleRemaining), angleRemaining, velocity);
 
-        if (std::abs(angleRemaining) < angularTolerance) {
+        if (std::abs(angleRemaining) < angularTolerance || oscillations > 2) {
             velocity = 0;
             done = true;
             ROS_INFO("Done rotation, error %f degrees", rad2deg(angleRemaining));
