@@ -4,7 +4,7 @@
 This package contains a node that performs very basic navigation.
 The path planning consists of rotating in place to face the goal and then
 driving straight toward it.  It is designed to provide the same interfaces as 
-[move_base](http://wiki.ros.org/ROS/move_base).
+[move_base](http://wiki.ros.org/move_base).
 
 ## Installing software
 
