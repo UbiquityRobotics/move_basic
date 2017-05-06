@@ -285,6 +285,10 @@ bool MoveBasic::handleRotation()
     }
 
     tf2::Vector3 linear = goalOdom.getOrigin() - poseOdom.getOrigin();
+    // don't do initial rotation if there is no translation
+    if (linear.length() == 0) {
+        return true;
+    }
     double requestedYaw = atan2(linear.y(), linear.x());
  
     if (requestedYaw == 0) {
