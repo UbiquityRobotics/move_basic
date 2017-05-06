@@ -51,10 +51,11 @@ typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+
+    ros::Publisher goalPub;
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
 
-    
     std::unique_ptr<MoveBaseActionServer> actionServer;
 
     tf2_ros::Buffer tfBuffer;
@@ -67,7 +68,6 @@ class MoveBasic {
     double linearTolerance;
 
     tf2::Transform goalOdom;
-    bool haveGoal;
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
@@ -128,7 +128,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 // Constructor
 
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
-                        listener(tfBuffer), haveGoal(false)
+                        listener(tfBuffer)
 {
     ros::NodeHandle nh("~");
 
@@ -145,9 +145,13 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
-    actionServer.reset(new MoveBaseActionServer(nh,
-        "move_basic", boost::bind(&MoveBasic::executeAction, this, _1), false));
+    ros::NodeHandle actionNh("");
+    actionServer.reset(new MoveBaseActionServer(actionNh,
+        "move_base", boost::bind(&MoveBasic::executeAction, this, _1), false));
 
+    actionServer->start();
+    goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
+      "/move_base/goal", 1);
 
     ROS_INFO("Move Basic ready");
 }
@@ -171,17 +175,29 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
 }
 
 
-void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal)
+// Called when a simple goal message is received
+
+void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
+    ROS_INFO("Received simple goal");
+    // send the goal to the action server
+    move_base_msgs::MoveBaseActionGoal actionGoal;
+    actionGoal.header.stamp = ros::Time::now();
+    actionGoal.goal.target_pose = *msg;
+
+    goalPub.publish(actionGoal);
 }
 
 
-// Called when a simple goal message is received
-void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
+// Called when an action goal is received
+void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 {
     tf2::Transform goal;
-    tf2::fromMsg(msg->pose, goal);
-    std::string frameId = msg->header.frame_id;
+    tf2::fromMsg(msg->target_pose.pose, goal);
+    std::string frameId = msg->target_pose.header.frame_id;
+    // Needed for RobotCommander
+    if (frameId[0] == '/')
+        frameId = frameId.substr(1);  
 
     double x, y, yaw;
     getPose(goal, x, y, yaw);
@@ -189,14 +205,14 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 
     tf2::Transform tfMapOdom;
     if (!getTransform(frameId, "odom", tfMapOdom)) {
-        ROS_WARN("Cannot determine robot pose");
+        actionServer->setAborted(move_base_msgs::MoveBaseResult(),
+                                 "Cannot determine robot pose");
         return;
     }
     goalOdom = tfMapOdom * goal;
 
     getPose(goalOdom, x, y, yaw);
     ROS_INFO("Goal in odom  %f %f %f", x, y, rad2deg(yaw));
-    haveGoal = true;
 
     nav_msgs::Path path;
     geometry_msgs::PoseStamped p0, p1;
@@ -216,6 +232,21 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     path.poses.push_back(p1);
 
     pathPub.publish(path);
+
+    if (!handleRotation()) {
+        actionServer->setAborted(move_base_msgs::MoveBaseResult(),
+                                 "Rotation failed");
+        return;
+    }
+    if (!handleLinear()) {
+        actionServer->setAborted(move_base_msgs::MoveBaseResult(),
+                                 "Linear movement failed");
+        return;
+    }
+    getPose(goalOdom, x, y, yaw);
+    rotateTo(yaw);
+
+    actionServer->setSucceeded();
 }
 
 
@@ -239,19 +270,6 @@ void MoveBasic::run()
     while (ros::ok()) {
         ros::spinOnce();
         r.sleep();
-
-        if (haveGoal) {
-            haveGoal = false;
-            if (!handleRotation()) {
-                continue;
-            }
-            if (!handleLinear()) {
-                continue;
-            }
-            double x, y, yaw;
-            getPose(goalOdom, x, y, yaw);
-            rotateTo(yaw);
-        }
     }
 }
 
@@ -322,7 +340,7 @@ bool MoveBasic::rotateTo(double requestedYaw)
             velocity = angularVelocity;
         }
 
-        if (haveGoal) { // new goal received
+        if (actionServer->isNewGoalAvailable()) {
             ROS_INFO("Stopping rotation due to new goal");
             done = true;
             velocity = 0;
@@ -388,7 +406,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
         double demand = requestedDistance - distTravelled;
         double velocity = linearVelocity;
 
-        if (haveGoal) { // new goal received
+        if (actionServer->isNewGoalAvailable()) {
             ROS_INFO("Stopping rotation due to new goal");
             done = true;
             velocity = 0;
