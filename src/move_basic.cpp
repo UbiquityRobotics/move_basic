@@ -50,10 +50,14 @@ class MoveBasic {
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
 
-    double angularVelocity;
+    double maxAngularVelocity;
+    double minAngularVelocity;
+    double angularAcceleration;
     double angularTolerance;
 
-    double linearVelocity;
+    double minLinearVelocity;
+    double maxLinearVelocity;
+    double linearAcceleration;
     double linearTolerance;
 
     tf2_ros::Buffer tfBuffer;
@@ -77,7 +81,7 @@ class MoveBasic {
     void run();
 
     bool moveLinear(double requestedDistance);
-    bool rotateTo(double requestedYaw);
+    bool rotateAbs(double requestedYaw);
     bool rotateRel(double yaw);
 };
 
@@ -120,10 +124,14 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 MoveBasic::MoveBasic(ros::NodeHandle &nh): tfBuffer(ros::Duration(30.0)),
                                            listener(tfBuffer), haveGoal(false)
 {
-    nh.param<double>("angular_velocity", angularVelocity, 0.3);
+    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.1);
+    nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
+    nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
 
-    nh.param<double>("linear_velocity", linearVelocity, 0.4);
+    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
+    nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
+    nh.param<double>("linear_acceleration", linearAcceleration, 0.5);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
@@ -230,7 +238,7 @@ void MoveBasic::run()
             }
             double x, y, yaw;
             getPose(goalOdom, x, y, yaw);
-            rotateTo(yaw);
+            rotateAbs(yaw);
         }
     }
 }
@@ -248,8 +256,8 @@ bool MoveBasic::handleRotation()
 
     tf2::Vector3 linear = goalOdom.getOrigin() - poseOdom.getOrigin();
     double requestedYaw = atan2(linear.y(), linear.x());
- 
-    return rotateTo(requestedYaw);
+
+    return rotateAbs(requestedYaw);
 }
 
 
@@ -268,13 +276,13 @@ bool MoveBasic::rotateRel(double yaw)
     double requestedYaw = currentYaw + yaw;
     normalizeAngle(requestedYaw);
 
-    return rotateTo(requestedYaw);
+    return rotateAbs(requestedYaw);
 }
 
 
 // Rotate to specified orientation (in radians)
 
-bool MoveBasic::rotateTo(double requestedYaw)
+bool MoveBasic::rotateAbs(double requestedYaw)
 {
     bool done = false;
     ros::Rate r(50);
@@ -291,15 +299,20 @@ bool MoveBasic::rotateTo(double requestedYaw)
         }
         getPose(poseOdom, x, y, currentYaw);
 
-        double demand = requestedYaw - currentYaw;
-        normalizeAngle(demand);
+        double angleRemaining = requestedYaw - currentYaw;
+        normalizeAngle(angleRemaining);
+
+        double speed = std::max(minAngularVelocity,
+            std::min(maxAngularVelocity,
+              std::sqrt(2.0 * angularAcceleration * std::abs(angleRemaining))));
 
         double velocity = 0;
-        if (demand < 0) {
-            velocity = -angularVelocity;
+
+        if (angleRemaining < 0) {
+            velocity = -speed;
         }
         else {
-            velocity = angularVelocity;
+            velocity = speed;
         }
 
         if (haveGoal) { // new goal received
@@ -307,11 +320,13 @@ bool MoveBasic::rotateTo(double requestedYaw)
             done = true;
             velocity = 0;
         }
-//        ROS_INFO("Demand %f %f %f", rad2deg(demand), demand, velocity);
-        if (std::abs(demand) < angularTolerance) {
+
+        //ROS_INFO("%f %f %f", rad2deg(angleRemaining), angleRemaining, velocity);
+
+        if (std::abs(angleRemaining) < angularTolerance) {
             velocity = 0;
             done = true;
-            ROS_INFO("Done rotation, error %f radians %f degrees", demand, rad2deg(demand));
+            ROS_INFO("Done rotation, error %f radians %f degrees", angleRemaining, rad2deg(angleRemaining));
         }
         sendCmd(velocity, 0);
     }
@@ -365,8 +380,12 @@ bool MoveBasic::moveLinear(double requestedDistance)
         tf2::Vector3 travelled = poseOdomInitial.getOrigin() - poseOdom.getOrigin();
         double distTravelled = travelled.length();;
 
-        double demand = requestedDistance - distTravelled;
-        double velocity = linearVelocity;
+        double distRemaining = requestedDistance - distTravelled;
+
+        double velocity = std::max(minLinearVelocity,
+            std::min(maxLinearVelocity, std::min(
+              std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
+              std::sqrt(2.0 * linearAcceleration * std::abs(distRemaining)))));
 
         if (haveGoal) { // new goal received
             ROS_INFO("Stopping rotation due to new goal");
@@ -374,12 +393,12 @@ bool MoveBasic::moveLinear(double requestedDistance)
             velocity = 0;
         }
 
-//        ROS_INFO("Demand %f %f", requestedDist-distTravelled, velocity);
+        //ROS_INFO("%f %f %f", distTravelled, distRemaining, velocity);
 
         if (distTravelled > requestedDistance - linearTolerance) {
             velocity = 0;
             done = true;
-            ROS_INFO("Done linear, error %f meters", demand);
+            ROS_INFO("Done linear, error %f meters", distRemaining);
         }
         sendCmd(0, velocity);
     }
