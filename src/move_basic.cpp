@@ -372,7 +372,7 @@ bool MoveBasic::rotateAbs(double requestedYaw)
         if (std::abs(angleRemaining) < angularTolerance) {
             velocity = 0;
             done = true;
-            ROS_INFO("Done rotation, error %f radians %f degrees", angleRemaining, rad2deg(angleRemaining));
+            ROS_INFO("Done rotation, error %f degrees", rad2deg(angleRemaining));
         }
         sendCmd(velocity, 0);
     }
@@ -388,7 +388,7 @@ bool MoveBasic::handleLinear()
 
     tf2::Transform poseOdomInitial;
     if (!getTransform("base_link", "odom", poseOdomInitial)) {
-         ROS_WARN("Cannot determine robot pose for linrar");
+         ROS_WARN("Cannot determine robot pose for linear");
          return false;
     }
 
@@ -400,7 +400,7 @@ bool MoveBasic::handleLinear()
 }
 
 
-// Move foreward specified distance
+// Move forward specified distance
 
 bool MoveBasic::moveLinear(double requestedDistance)
 {
@@ -409,7 +409,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
     tf2::Transform poseOdomInitial;
     if (!getTransform("base_link", "odom", poseOdomInitial)) {
-         ROS_WARN("Cannot determine robot pose for linrar");
+         ROS_WARN("Cannot determine robot pose for linear");
          return false;
     }
 
