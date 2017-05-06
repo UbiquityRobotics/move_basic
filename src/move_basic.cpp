@@ -54,7 +54,8 @@ class MoveBasic {
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
 
-//    MoveBaseActionServer actionServer;
+    
+    std::unique_ptr<MoveBaseActionServer> actionServer;
 
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
@@ -70,8 +71,7 @@ class MoveBasic {
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
-    void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal,
-                       MoveBaseActionServer* as);
+    void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
 
     void sendCmd(double angular, double linear);
 
@@ -128,7 +128,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 // Constructor
 
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
-                                           listener(tfBuffer), haveGoal(false)
+                        listener(tfBuffer), haveGoal(false)
 {
     ros::NodeHandle nh("~");
 
@@ -145,8 +145,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
-    MoveBaseActionServer* actionServer = new MoveBaseActionServer(nh,
-        "move_basic", boost::bind(&MoveBasic::executeAction, this, _1, actionServer), false);
+    actionServer.reset(new MoveBaseActionServer(nh,
+        "move_basic", boost::bind(&MoveBasic::executeAction, this, _1), false));
 
 
     ROS_INFO("Move Basic ready");
@@ -171,14 +171,12 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
 }
 
 
-void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal,
-                              MoveBaseActionServer* as)
+void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal)
 {
 }
 
 
 // Called when a simple goal message is received
-
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
     tf2::Transform goal;
