@@ -146,7 +146,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
                             &MoveBasic::goalCallback, this);
 
     MoveBaseActionServer* actionServer = new MoveBaseActionServer(nh,
-        "move_basic", boost::bind(&MoveBasic::executeAction, this, _1), false);
+        "move_basic", boost::bind(&MoveBasic::executeAction, this, _1, actionServer), false);
 
 
     ROS_INFO("Move Basic ready");
@@ -411,8 +411,8 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
 int main(int argc, char ** argv) {
     ros::init(argc, argv, "move_basic");
-    MoveBasic node();
-    node.run();
+    MoveBasic mb_node;
+    mb_node.run();
 
     return 0;
 }
