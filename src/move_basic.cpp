@@ -40,9 +40,13 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
 
+#include <actionlib/server/simple_action_server.h>
+#include <move_base_msgs/MoveBaseAction.h>
+
 #include <list>
 #include <string>
 
+typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
 
 class MoveBasic {
   private:
@@ -50,19 +54,25 @@ class MoveBasic {
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
 
+//    MoveBaseActionServer actionServer;
+
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener listener;
+
     double angularVelocity;
     double angularTolerance;
 
     double linearVelocity;
     double linearTolerance;
 
-    tf2_ros::Buffer tfBuffer;
-    tf2_ros::TransformListener listener;
-
     tf2::Transform goalOdom;
     bool haveGoal;
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+
+    void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal,
+                       MoveBaseActionServer* as);
+
     void sendCmd(double angular, double linear);
 
     bool getTransform(const std::string& from, const std::string& to,
@@ -72,7 +82,7 @@ class MoveBasic {
     bool handleLinear();
 
   public:
-    MoveBasic(ros::NodeHandle &nh);
+    MoveBasic();
 
     void run();
 
@@ -117,9 +127,11 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 
 // Constructor
 
-MoveBasic::MoveBasic(ros::NodeHandle &nh): tfBuffer(ros::Duration(30.0)),
+MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
                                            listener(tfBuffer), haveGoal(false)
 {
+    ros::NodeHandle nh("~");
+
     nh.param<double>("angular_velocity", angularVelocity, 0.3);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
 
@@ -132,6 +144,10 @@ MoveBasic::MoveBasic(ros::NodeHandle &nh): tfBuffer(ros::Duration(30.0)),
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
+
+    MoveBaseActionServer* actionServer = new MoveBaseActionServer(nh,
+        "move_basic", boost::bind(&MoveBasic::executeAction, this, _1), false);
+
 
     ROS_INFO("Move Basic ready");
 }
@@ -152,6 +168,12 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
          ROS_WARN("%s", ex.what());
          return false;
     }
+}
+
+
+void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal,
+                              MoveBaseActionServer* as)
+{
 }
 
 
@@ -389,8 +411,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
 int main(int argc, char ** argv) {
     ros::init(argc, argv, "move_basic");
-    ros::NodeHandle nh("~");
-    MoveBasic node(nh);
+    MoveBasic node();
     node.run();
 
     return 0;
