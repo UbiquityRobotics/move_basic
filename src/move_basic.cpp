@@ -231,7 +231,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Transform poseOdom;
     if (!getTransform("base_link", "odom", poseOdom)) {
-         ROS_WARN("Cannot determine robot pose for rotation");
+         actionServer->setAborted(move_base_msgs::MoveBaseResult(),
+                                 "Cannot determine robot pose");
          return;
     }
     getPose(poseOdom, x, y, yaw);
@@ -252,7 +253,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         return;
     }
     getPose(goalOdom, x, y, yaw);
-    rotateTo(yaw);
+    rotateAbs(yaw);
 
     actionServer->setSucceeded();
 }
@@ -278,19 +279,6 @@ void MoveBasic::run()
     while (ros::ok()) {
         ros::spinOnce();
         r.sleep();
-
-        if (haveGoal) {
-            haveGoal = false;
-            if (!handleRotation()) {
-                continue;
-            }
-            if (!handleLinear()) {
-                continue;
-            }
-            double x, y, yaw;
-            getPose(goalOdom, x, y, yaw);
-            rotateAbs(yaw);
-        }
     }
 }
 
