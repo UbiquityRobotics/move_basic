@@ -9,6 +9,9 @@ find_package(catkin REQUIRED COMPONENTS
   tf2
   geometry_msgs
   std_msgs
+  actionlib
+  actionlib_msgs
+  nav_core
 )
 
 catkin_package(INCLUDE_DIRS DEPENDS)
