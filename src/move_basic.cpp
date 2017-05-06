@@ -213,7 +213,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     // Needed for RobotCommander
     if (frameId[0] == '/')
-        frameId = frameId.substr(1)
+        frameId = frameId.substr(1);
 
     double x, y, yaw;
     getPose(goal, x, y, yaw);
