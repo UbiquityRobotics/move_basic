@@ -39,11 +39,11 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
+#include <sensor_msgs/LaserScan.h>
 
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
 
-#include <list>
 #include <string>
 
 typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
@@ -51,6 +51,7 @@ typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber scanSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -71,7 +72,14 @@ class MoveBasic {
     double linearAcceleration;
     double linearTolerance;
 
+    double robotWidth;
+
     tf2::Transform goalOdom;
+    bool obstacleDetected;
+
+    void abortGoal(const std::string msg);
+
+    void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
@@ -139,7 +147,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 // Constructor
 
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
-                        listener(tfBuffer)
+                        listener(tfBuffer), obstacleDetected(false)
 {
     ros::NodeHandle nh("~");
 
@@ -153,9 +161,13 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_acceleration", linearAcceleration, 0.5);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
+    nh.param<double>("robot_width", robotWidth, 0.35);
+
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
 
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
+
+    scanSub = nh.subscribe("/scan", 1, &MoveBasic::scanCallback, this);
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
@@ -190,6 +202,51 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
 }
 
 
+// Called when a laser scan is received assumes laser scanner is
+// mounted at around base_link. Sets obstacleDetected
+
+void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
+{
+    double angle = msg->angle_min;
+    double increment = msg->angle_increment;
+    double width_2 = robotWidth / 2.0;
+    double rangeMin = msg->range_min;
+    double minDist = msg->range_max;
+
+    for (int i=0; i<msg->ranges.size(); i++) {
+        angle += increment;
+
+        double r = msg->ranges[i];
+
+        // ignore bogus samples
+        if (r < rangeMin) {
+            continue;
+        }
+
+        double y = r * sin(angle);
+
+        // ignore anything outside width of robot
+        if (std::abs(y) > width_2) {
+            continue;
+        }
+
+        double x = r * cos(angle);
+
+        // ignore anything behind center of lidar
+        if (x < 0) {
+            continue;
+        }
+
+        if (x < minDist) {
+            minDist = x;
+        }
+    }
+    // assume error condition if there is an obstacle within a
+    // distance that robot could travel in half a second
+    obstacleDetected = minDist < maxLinearVelocity / 2.0;
+}
+
+
 // Called when a simple goal message is received
 
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
@@ -204,7 +261,16 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 }
 
 
+// Abort goal and print message
+void MoveBasic::abortGoal(const std::string msg)
+{
+    actionServer->setAborted(move_base_msgs::MoveBaseResult(), msg);
+    ROS_ERROR("%s", msg.c_str());
+}
+
+
 // Called when an action goal is received
+
 void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 {
     tf2::Transform goal;
@@ -221,8 +287,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Transform tfMapOdom;
     if (!getTransform(frameId, "odom", tfMapOdom)) {
-        actionServer->setAborted(move_base_msgs::MoveBaseResult(),
-                                 "Cannot determine robot pose");
+        abortGoal("Cannot determine robot pose");
         return;
     }
     goalOdom = tfMapOdom * goal;
@@ -239,8 +304,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Transform poseOdom;
     if (!getTransform("base_link", "odom", poseOdom)) {
-         actionServer->setAborted(move_base_msgs::MoveBaseResult(),
-                                 "Cannot determine robot pose");
+         abortGoal("Cannot determine robot pose");
          return;
     }
     getPose(poseOdom, x, y, yaw);
@@ -251,13 +315,9 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     pathPub.publish(path);
 
     if (!handleRotation()) {
-        actionServer->setAborted(move_base_msgs::MoveBaseResult(),
-                                 "Rotation failed");
         return;
     }
     if (!handleLinear()) {
-        actionServer->setAborted(move_base_msgs::MoveBaseResult(),
-                                 "Linear movement failed");
         return;
     }
     getPose(goalOdom, x, y, yaw);
@@ -321,7 +381,7 @@ bool MoveBasic::rotateRel(double yaw)
 {
     tf2::Transform poseOdom;
     if (!getTransform("base_link", "odom", poseOdom)) {
-         ROS_WARN("Cannot determine robot pose for rotation");
+         abortGoal("Cannot determine robot pose for rotation");
          return false;
     }
 
@@ -351,8 +411,8 @@ bool MoveBasic::rotateAbs(double requestedYaw)
         double x, y, currentYaw;
         tf2::Transform poseOdom;
         if (!getTransform("base_link", "odom", poseOdom)) {
-             ROS_WARN("Cannot determine robot pose for rotation");
-             return false;
+            abortGoal("Cannot determine robot pose for rotation");
+            return false;
         }
         getPose(poseOdom, x, y, currentYaw);
 
@@ -426,7 +486,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
     tf2::Transform poseOdomInitial;
     if (!getTransform("base_link", "odom", poseOdomInitial)) {
-         ROS_WARN("Cannot determine robot pose for linear");
+         abortGoal("Cannot determine robot pose for linear");
          return false;
     }
 
@@ -438,6 +498,11 @@ bool MoveBasic::moveLinear(double requestedDistance)
         if (!getTransform("base_link", "odom", poseOdom)) {
              ROS_WARN("Cannot determine robot pose for linear");
              continue;
+        }
+
+        if (obstacleDetected) {
+            abortGoal("Obstacle detected");
+            return false;
         }
 
         tf2::Vector3 travelled = poseOdomInitial.getOrigin() - poseOdom.getOrigin();
