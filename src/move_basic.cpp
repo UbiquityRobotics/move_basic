@@ -73,6 +73,7 @@ class MoveBasic {
     double linearTolerance;
 
     double robotWidth;
+    double obstacleWaitLimit;
 
     tf2::Transform goalOdom;
     bool obstacleDetected;
@@ -162,6 +163,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
     nh.param<double>("robot_width", robotWidth, 0.35);
+    nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
 
@@ -207,30 +209,30 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
 
 void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
-    double angle = msg->angle_min;
-    double increment = msg->angle_increment;
-    double width_2 = robotWidth / 2.0;
-    double rangeMin = msg->range_min;
-    double minDist = msg->range_max;
+    float angle = msg->angle_min;
+    float increment = msg->angle_increment;
+    float width_2 = robotWidth / 2.0;
+    float rangeMin = msg->range_min;
+    float minDist = msg->range_max;
 
     for (int i=0; i<msg->ranges.size(); i++) {
         angle += increment;
 
-        double r = msg->ranges[i];
+        float r = msg->ranges[i];
 
         // ignore bogus samples
-        if (r < rangeMin) {
+        if (std::isnan(r) || r < rangeMin) {
             continue;
         }
 
-        double y = r * sin(angle);
+        float y = r * sin(angle);
 
         // ignore anything outside width of robot
         if (std::abs(y) > width_2) {
             continue;
         }
 
-        double x = r * cos(angle);
+        float x = r * cos(angle);
 
         // ignore anything behind center of lidar
         if (x < 0) {
@@ -484,6 +486,9 @@ bool MoveBasic::moveLinear(double requestedDistance)
     bool done = false;
     ros::Rate r(50);
 
+    bool waitingForObstacle = false;
+    ros::Time obstacleTime;
+
     tf2::Transform poseOdomInitial;
     if (!getTransform("base_link", "odom", poseOdomInitial)) {
          abortGoal("Cannot determine robot pose for linear");
@@ -500,11 +505,6 @@ bool MoveBasic::moveLinear(double requestedDistance)
              continue;
         }
 
-        if (obstacleDetected) {
-            abortGoal("Obstacle detected");
-            return false;
-        }
-
         tf2::Vector3 travelled = poseOdomInitial.getOrigin() - poseOdom.getOrigin();
         double distTravelled = travelled.length();;
 
@@ -514,6 +514,27 @@ bool MoveBasic::moveLinear(double requestedDistance)
             std::min(maxLinearVelocity, std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
               std::sqrt(2.0 * linearAcceleration * std::abs(distRemaining)))));
+
+        if (obstacleDetected) {
+            velocity = 0;
+            if (!waitingForObstacle) {
+                ROS_INFO("Pausing for obstacle");
+                obstacleTime = ros::Time::now();
+                waitingForObstacle = true;
+            }
+            else {
+                ros::Duration waitTime = ros::Time::now() - obstacleTime;
+                if (waitTime.toSec() > obstacleWaitLimit) {
+                    abortGoal("Aborting after obstacle wait time limit reached");
+                    return false;
+                }
+            }
+        }
+
+        if (waitingForObstacle && ! obstacleDetected) {
+            ROS_INFO("Resuming after obstacle has gone");
+            waitingForObstacle = false;
+        }
 
         if (actionServer->isNewGoalAvailable()) {
             ROS_INFO("Stopping rotation due to new goal");
