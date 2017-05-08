@@ -40,6 +40,7 @@
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
 #include <sensor_msgs/LaserScan.h>
+#include <visualization_msgs/Marker.h>
 
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
@@ -56,6 +57,7 @@ class MoveBasic {
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
+    ros::Publisher linePub;
 
     std::unique_ptr<MoveBaseActionServer> actionServer;
 
@@ -78,15 +80,12 @@ class MoveBasic {
     tf2::Transform goalOdom;
     bool obstacleDetected;
 
-    void abortGoal(const std::string msg);
-
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
-
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
-
+    void drawLine(double x0, double y0, double x1, double y1);
     void sendCmd(double angular, double linear);
+    void abortGoal(const std::string msg);
 
     bool getTransform(const std::string& from, const std::string& to,
                       tf2::Transform& tf);
@@ -166,8 +165,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
-
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
+    linePub = ros::Publisher(nh.advertise<visualization_msgs::Marker>("/obstacle", 1));
 
     scanSub = nh.subscribe("/scan", 1, &MoveBasic::scanCallback, this);
 
@@ -244,8 +243,10 @@ void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
         }
     }
     // assume error condition if there is an obstacle within a
-    // distance that robot could travel in half a second
-    obstacleDetected = minDist < maxLinearVelocity / 2.0;
+    // distance that robot could travel in one second
+    obstacleDetected = minDist < maxLinearVelocity;
+
+    drawLine(minDist, -width_2, minDist, width_2);
 }
 
 
@@ -339,6 +340,38 @@ void MoveBasic::sendCmd(double angular, double linear)
 
    cmdPub.publish(msg);
 }
+
+
+// publish visualization
+
+void MoveBasic::drawLine(double x0, double y0, double x1, double y1)
+{
+    visualization_msgs::Marker line;
+    line.type = visualization_msgs::Marker::LINE_LIST;
+    line.action = visualization_msgs::Marker::ADD;
+    line.header.frame_id = "/base_link";
+    line.color.r = 1.0f;
+    line.color.g = 0.0f;
+    line.color.b = 0.0f;
+    line.color.a = 1.0f;
+    line.id = 0x42;
+    line.ns = "distance";
+    line.scale.x = line.scale.y = line.scale.z = 0.01;
+    line.pose.position.x = 0;
+    line.pose.position.y = 0;
+    geometry_msgs::Point gp0, gp1;
+    gp0.x = x0;
+    gp0.y = y0;
+    gp0.z = 0;
+    gp1.x = x1;
+    gp1.y = y1;
+    gp1.z = 0;
+    line.points.push_back(gp0);
+    line.points.push_back(gp1);
+
+    linePub.publish(line);
+}
+
 
 
 // Main loop
@@ -534,6 +567,9 @@ bool MoveBasic::moveLinear(double requestedDistance)
         if (waitingForObstacle && ! obstacleDetected) {
             ROS_INFO("Resuming after obstacle has gone");
             waitingForObstacle = false;
+            // start off again smoothly
+            requestedDistance = distRemaining;
+            poseOdomInitial = poseOdom;
         }
 
         if (actionServer->isNewGoalAvailable()) {
