@@ -286,7 +286,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     double x, y, yaw;
     getPose(goal, x, y, yaw);
+
     ROS_INFO("Received goal %f %f %f", x, y, rad2deg(yaw));
+
+    if (std::isnan(yaw)) {
+        abortGoal("Aborting goal because an invalid orientation was specified");
+        return;
+    }
 
     tf2::Transform tfMapOdom;
     if (!getTransform(frameId, "odom", tfMapOdom)) {
@@ -558,7 +564,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
             else {
                 ros::Duration waitTime = ros::Time::now() - obstacleTime;
                 if (waitTime.toSec() > obstacleWaitLimit) {
-                    abortGoal("Aborting after obstacle wait time limit reached");
+                    abortGoal("Aborting due to obstacle");
                     return false;
                 }
             }
