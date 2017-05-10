@@ -159,7 +159,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
-    nh.param<double>("linear_acceleration", linearAcceleration, 0.5);
+    nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
     // width of robot for obstacle detection
