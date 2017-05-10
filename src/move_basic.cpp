@@ -75,10 +75,11 @@ class MoveBasic {
     double linearTolerance;
 
     double robotWidth;
+    double frontToLidar;
     double obstacleWaitLimit;
 
     tf2::Transform goalOdom;
-    bool obstacleDetected;
+    double obstacleDist;
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -147,7 +148,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 // Constructor
 
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
-                        listener(tfBuffer), obstacleDetected(false)
+                        listener(tfBuffer), obstacleDist(10.0)
 {
     ros::NodeHandle nh("~");
 
@@ -158,10 +159,14 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
-    nh.param<double>("linear_acceleration", linearAcceleration, 0.5);
+    nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
+    // width of robot for obstacle detection
     nh.param<double>("robot_width", robotWidth, 0.35);
+    // distance from lidar center to front-most part of robot
+    nh.param<double>("front_to_lidar", frontToLidar, 0.11);
+    // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
@@ -242,9 +247,7 @@ void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
             minDist = x;
         }
     }
-    // assume error condition if there is an obstacle within a
-    // distance that robot could travel in one second
-    obstacleDetected = minDist < maxLinearVelocity;
+    obstacleDist = minDist - frontToLidar;
 
     drawLine(minDist, -width_2, minDist, width_2);
 }
@@ -552,8 +555,12 @@ bool MoveBasic::moveLinear(double requestedDistance)
         double velocity = std::max(minLinearVelocity,
             std::min(maxLinearVelocity, std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
-              std::sqrt(2.0 * linearAcceleration * std::abs(distRemaining)))));
+              std::sqrt(2.0 * linearAcceleration * std::min(obstacleDist,
+                std::abs(distRemaining))))));
 
+        // Stop if there is an obstacle in the distance we would travel in
+        // 1 second
+        bool obstacleDetected = obstacleDist <= velocity * 1.0;
         if (obstacleDetected) {
             velocity = 0;
             if (!waitingForObstacle) {
