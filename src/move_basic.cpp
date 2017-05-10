@@ -74,11 +74,12 @@ class MoveBasic {
     double linearAcceleration;
     double linearTolerance;
 
+    int rotationAttempts;
+    double localizationLatency;
+
     double robotWidth;
-    double frontToLidar;
     double obstacleWaitLimit;
 
-    tf2::Transform goalOdom;
     double obstacleDist;
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
@@ -90,9 +91,8 @@ class MoveBasic {
 
     bool getTransform(const std::string& from, const std::string& to,
                       tf2::Transform& tf);
-
-    bool handleRotation();
-    bool handleLinear();
+    bool transformPose(const std::string& from, const std::string& to,
+                       const tf2::Transform& in, tf2::Transform& out);
 
   public:
     MoveBasic();
@@ -100,8 +100,7 @@ class MoveBasic {
     void run();
 
     bool moveLinear(double requestedDistance);
-    bool rotateAbs(double requestedYaw);
-    bool rotateRel(double yaw);
+    bool rotate(double requestedYaw);
 };
 
 
@@ -162,11 +161,11 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
-    // width of robot for obstacle detection
+    // how long to wait after moving to be sure localization is accurate
+    nh.param<double>("localization_latency", localizationLatency, 0.5);
+    nh.param<int>("rotation_attempts", rotationAttempts, 2);
+
     nh.param<double>("robot_width", robotWidth, 0.35);
-    // distance from lidar center to front-most part of robot
-    nh.param<double>("front_to_lidar", frontToLidar, 0.11);
-    // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
@@ -205,6 +204,20 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
          ROS_WARN("%s", ex.what());
          return false;
     }
+}
+
+
+// Transform a pose from one frame to another
+
+bool MoveBasic::transformPose(const std::string& from, const std::string& to,
+                             const tf2::Transform& in, tf2::Transform& out)
+{
+    tf2::Transform tf;
+    if (!getTransform(from, to, tf)) {
+        return false;
+    }
+    out = tf * in;
+    return true;
 }
 
 
@@ -268,6 +281,7 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 
 
 // Abort goal and print message
+
 void MoveBasic::abortGoal(const std::string msg)
 {
     actionServer->setAborted(move_base_msgs::MoveBaseResult(), msg);
@@ -279,6 +293,18 @@ void MoveBasic::abortGoal(const std::string msg)
 
 void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 {
+    /*
+      Plan a path that involves rotating to face the goal, going straight towards it,
+      and then rotating for the final orientation.
+
+      It is assumed that we are dealing with imperfect localization data:
+         map->base_link is accurate but may be delayed and is at a slow rate
+         odom->base_link is frequent, but drifts, particularly after rotating
+
+      To counter these issues, we plan in the map frame, and wait localizationLatency
+      after each step, and execute in the odom frame.
+    */
+         
     tf2::Transform goal;
     tf2::fromMsg(msg->target_pose.pose, goal);
     std::string frameId = msg->target_pose.header.frame_id;
@@ -290,50 +316,91 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     double x, y, yaw;
     getPose(goal, x, y, yaw);
 
-    ROS_INFO("Received goal %f %f %f", x, y, rad2deg(yaw));
+    ROS_INFO("Received goal %f %f %f %s", x, y, rad2deg(yaw), frameId.c_str());
 
     if (std::isnan(yaw)) {
         abortGoal("Aborting goal because an invalid orientation was specified");
         return;
     }
 
-    tf2::Transform tfMapOdom;
-    if (!getTransform(frameId, "odom", tfMapOdom)) {
+    tf2::Transform goalMap;
+    if (!transformPose(frameId, "map", goal, goalMap)) {
         abortGoal("Cannot determine robot pose");
         return;
     }
-    goalOdom = tfMapOdom * goal;
 
-    getPose(goalOdom, x, y, yaw);
-    ROS_INFO("Goal in odom  %f %f %f", x, y, rad2deg(yaw));
+    double goalYaw;
+    getPose(goalMap, x, y, goalYaw);
+    ROS_INFO("Goal in map  %f %f %f", x, y, rad2deg(goalYaw));
 
+    // publish our planned path
     nav_msgs::Path path;
     geometry_msgs::PoseStamped p0, p1;
-    path.header.frame_id = "odom";
+    path.header.frame_id = "map";
     p0.pose.position.x = x;
     p0.pose.position.y = y;
     path.poses.push_back(p0);
 
-    tf2::Transform poseOdom;
-    if (!getTransform("base_link", "odom", poseOdom)) {
+    tf2::Transform poseMap;
+    if (!getTransform("base_link", "map", poseMap)) {
          abortGoal("Cannot determine robot pose");
          return;
     }
-    getPose(poseOdom, x, y, yaw);
+    getPose(poseMap, x, y, yaw);
     p1.pose.position.x = x;
     p1.pose.position.y = y;
     path.poses.push_back(p1);
 
     pathPub.publish(path);
 
-    if (!handleRotation()) {
-        return;
+    // Initial rotation to face goal
+    for (int i=0; i<rotationAttempts; i++) {
+        tf2::Transform goalInBase;
+        if (!transformPose(frameId, "base_link", goal, goalInBase)) {
+            ROS_WARN("Cannot determine robot pose for rotation");
+            return;
+        }
+
+        tf2::Vector3 offset = goalInBase.getOrigin();
+        if (offset.length() != 0.0) {
+            double requestedYaw = atan2(offset.y(), offset.x());
+
+            if (std::abs(requestedYaw) < angularTolerance) {
+                break;
+            }
+            if (!rotate(requestedYaw)) {
+                return;
+            }
+            sleep(localizationLatency);
+        }
     }
-    if (!handleLinear()) {
-        return;
+
+    // Do linear portion of goal
+    tf2::Transform goalInBase;
+    if (!transformPose(frameId, "base_link", goal, goalInBase)) {
+         ROS_WARN("Cannot determine robot pose for linear");
+         return;
     }
-    getPose(goalOdom, x, y, yaw);
-    rotateAbs(yaw);
+
+    tf2::Vector3 linear = goalInBase.getOrigin();
+    // we could check for linear.y being within linearTolerance, however
+    // if linear.x is large, then that requires a high degree of angular accuracy
+    ROS_INFO("Requested distance %f %f", linear.x(), linear.y());
+
+    if (linear.x() > linearTolerance)
+        if (!moveLinear(linear.x())) {
+            return;
+        }
+        sleep(localizationLatency);
+
+    // Final rotation as specified in goal
+    if (!getTransform("base_link", "map", poseMap)) {
+         abortGoal("Cannot determine robot pose for final rotation");
+         return;
+    }
+
+    getPose(poseMap, x, y, yaw);
+    rotate(goalYaw - yaw);
 
     actionServer->setSucceeded();
 }
@@ -382,7 +449,6 @@ void MoveBasic::drawLine(double x0, double y0, double x1, double y1)
 }
 
 
-
 // Main loop
 
 void MoveBasic::run()
@@ -395,34 +461,12 @@ void MoveBasic::run()
 }
 
 
-// Do angular part of goal
-
-bool MoveBasic::handleRotation()
-{
-    tf2::Transform poseOdom;
-    if (!getTransform("base_link", "odom", poseOdom)) {
-         ROS_WARN("Cannot determine robot pose for rotation");
-         return false;
-    }
-
-    tf2::Vector3 linear = goalOdom.getOrigin() - poseOdom.getOrigin();
-    // don't do initial rotation if there is no translation
-    if (linear.length() == 0) {
-        return true;
-    }
-    double requestedYaw = atan2(linear.y(), linear.x());
-
-    if (requestedYaw == 0) {
-        return true;
-    }
-    return rotateAbs(requestedYaw);
-}
-
-
 // Rotate relative to current orientation
 
-bool MoveBasic::rotateRel(double yaw)
+bool MoveBasic::rotate(double yaw)
 {
+    ROS_INFO("Requested rotation %f", rad2deg(yaw));
+
     tf2::Transform poseOdom;
     if (!getTransform("base_link", "odom", poseOdom)) {
          abortGoal("Cannot determine robot pose for rotation");
@@ -434,14 +478,6 @@ bool MoveBasic::rotateRel(double yaw)
     double requestedYaw = currentYaw + yaw;
     normalizeAngle(requestedYaw);
 
-    return rotateAbs(requestedYaw);
-}
-
-
-// Rotate to specified orientation (in radians)
-
-bool MoveBasic::rotateAbs(double requestedYaw)
-{
     bool done = false;
     ros::Rate r(50);
 
@@ -499,27 +535,6 @@ bool MoveBasic::rotateAbs(double requestedYaw)
     }
     return done;
 }
-
-
-// Do linear part of goal
-
-bool MoveBasic::handleLinear()
-{
-    bool done = false;
-
-    tf2::Transform poseOdomInitial;
-    if (!getTransform("base_link", "odom", poseOdomInitial)) {
-         ROS_WARN("Cannot determine robot pose for linear");
-         return false;
-    }
-
-    tf2::Vector3 linear = goalOdom.getOrigin() - poseOdomInitial.getOrigin();
-    double requestedDistance = linear.length();;
-    ROS_INFO("Requested distance %f", requestedDistance);
-
-    return moveLinear(requestedDistance);
-}
-
 
 // Move forward specified distance
 
