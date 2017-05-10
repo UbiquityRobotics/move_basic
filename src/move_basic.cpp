@@ -78,6 +78,7 @@ class MoveBasic {
     double localizationLatency;
 
     double robotWidth;
+    double frontToLidar;
     double obstacleWaitLimit;
 
     double obstacleDist;
@@ -166,6 +167,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<int>("rotation_attempts", rotationAttempts, 2);
 
     nh.param<double>("robot_width", robotWidth, 0.35);
+    // distance from lidar center to front-most part of robot
+    nh.param<double>("front_to_lidar", frontToLidar, 0.11);
+    // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
