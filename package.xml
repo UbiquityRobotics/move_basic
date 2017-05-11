@@ -5,6 +5,7 @@
   <description>Simple navigation package</description>
 
   <maintainer email="jimv@mrjim.com">Jim Vaughan</maintainer>
+  <maintainer email="send2arohan@gmail.com">Rohan Agrawal</maintainer>
 
   <license>BSD</license>
 
@@ -17,7 +18,12 @@
   <depend>tf2_ros</depend>
   <depend>tf2</depend>
   <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_core</depend>
 
   <depend>actionlib</depend>
   <depend>actionlib_msgs</depend>
 </package>
+
