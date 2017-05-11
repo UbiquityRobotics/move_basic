@@ -30,3 +30,6 @@ To run, give the following command:
 
      $ rosrun move_basic move_basic
 
+## Node details
+
+Please refer to [move_basic](http://wiki.ros.org/move_basic) for node documentation.
