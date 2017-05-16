@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.1 (2017-05-15)
+------------------
 * Add URL to wiki page to README.md (`#15 <https://github.com/UbiquityRobotics/move_basic/issues/15>`_)
 * added all deps in the package xml (`#14 <https://github.com/UbiquityRobotics/move_basic/issues/14>`_)
 * Contributors: Jim Vaughan, Rohan Agrawal
