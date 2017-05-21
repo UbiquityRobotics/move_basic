@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.0 (2017-05-21)
+------------------
 * Add move_base_msgs dep
 * Contributors: Jim Vaughan
 
