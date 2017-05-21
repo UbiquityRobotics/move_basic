@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
   sensor_msgs
   visualization_msgs
+  move_base_msgs
   nav_core
 )
 
