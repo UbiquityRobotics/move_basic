@@ -343,6 +343,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     path.header.frame_id = "map";
     p0.pose.position.x = x;
     p0.pose.position.y = y;
+    p0.header.frame_id = mapFrame;
     path.poses.push_back(p0);
 
     tf2::Transform poseMap;
@@ -353,6 +354,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     getPose(poseMap, x, y, yaw);
     p1.pose.position.x = x;
     p1.pose.position.y = y;
+    p1.header.frame_id = mapFrame;
     path.poses.push_back(p1);
 
     pathPub.publish(path);
