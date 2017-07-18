@@ -2,6 +2,11 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Add map_frame param
+* Contributors: Jim Vaughan
+
 0.2.0 (2017-05-21)
 ------------------
 * Add move_base_msgs dep
