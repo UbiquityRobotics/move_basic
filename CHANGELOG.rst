@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.1 (2017-07-17)
+------------------
 * Add map_frame param
 * Contributors: Jim Vaughan
 
