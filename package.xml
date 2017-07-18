@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>move_basic</name>
-  <version>0.2.0</version>
+  <version>0.2.1</version>
   <description>Simple navigation package</description>
 
   <maintainer email="jimv@mrjim.com">Jim Vaughan</maintainer>
