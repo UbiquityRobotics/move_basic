@@ -82,6 +82,7 @@ class MoveBasic {
     double obstacleWaitLimit;
 
     double obstacleDist;
+    std::string mapFrame;
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -171,6 +172,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("front_to_lidar", frontToLidar, 0.11);
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
+
+    nh.param<std::string>("map_frame", mapFrame, "map");
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
@@ -328,25 +331,25 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     tf2::Transform goalMap;
-    if (!transformPose(frameId, "map", goal, goalMap)) {
+    if (!transformPose(frameId, mapFrame, goal, goalMap)) {
         abortGoal("Cannot determine robot pose");
         return;
     }
 
     double goalYaw;
     getPose(goalMap, x, y, goalYaw);
-    ROS_INFO("Goal in map  %f %f %f", x, y, rad2deg(goalYaw));
+    ROS_INFO("Goal in %s  %f %f %f", mapFrame.c_str(), x, y, rad2deg(goalYaw));
 
     // publish our planned path
     nav_msgs::Path path;
     geometry_msgs::PoseStamped p0, p1;
-    path.header.frame_id = "map";
+    path.header.frame_id = mapFrame;
     p0.pose.position.x = x;
     p0.pose.position.y = y;
     path.poses.push_back(p0);
 
     tf2::Transform poseMap;
-    if (!getTransform("base_link", "map", poseMap)) {
+    if (!getTransform("base_link", mapFrame, poseMap)) {
          abortGoal("Cannot determine robot pose");
          return;
     }
@@ -398,7 +401,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         sleep(localizationLatency);
 
     // Final rotation as specified in goal
-    if (!getTransform("base_link", "map", poseMap)) {
+    if (!getTransform("base_link", mapFrame, poseMap)) {
          abortGoal("Cannot determine robot pose for final rotation");
          return;
     }
