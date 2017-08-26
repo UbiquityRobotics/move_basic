@@ -165,7 +165,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
-    nh.param<int>("rotation_attempts", rotationAttempts, 2);
+    nh.param<int>("rotation_attempts", rotationAttempts, 1);
 
     nh.param<double>("robot_width", robotWidth, 0.35);
     // distance from lidar center to front-most part of robot
