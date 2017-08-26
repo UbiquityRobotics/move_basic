@@ -330,34 +330,39 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         return;
     }
 
+    std::string goalFrame;
+    double goalYaw;
+
     tf2::Transform goalMap;
     if (!transformPose(frameId, mapFrame, goal, goalMap)) {
-        abortGoal("Cannot determine robot pose");
-        return;
+        ROS_WARN("Will attempt to operate in %s frame", frameId.c_str());
+        goalFrame = frameId;
+        goalYaw = yaw;
     }
-
-    double goalYaw;
-    getPose(goalMap, x, y, goalYaw);
-    ROS_INFO("Goal in %s  %f %f %f", mapFrame.c_str(), x, y, rad2deg(goalYaw));
+    else {
+        ROS_INFO("Goal in %s  %f %f %f", mapFrame.c_str(), x, y, rad2deg(goalYaw));
+        goalFrame = mapFrame;
+        getPose(goalMap, x, y, goalYaw);
+    }
 
     // publish our planned path
     nav_msgs::Path path;
     geometry_msgs::PoseStamped p0, p1;
-    path.header.frame_id = mapFrame;
+    path.header.frame_id = frameId;
     p0.pose.position.x = x;
     p0.pose.position.y = y;
-    p0.header.frame_id = mapFrame;
+    p0.header.frame_id = frameId;
     path.poses.push_back(p0);
 
-    tf2::Transform poseMap;
-    if (!getTransform("base_link", mapFrame, poseMap)) {
+    tf2::Transform poseFrameId;
+    if (!getTransform("base_link", frameId, poseFrameId)) {
          abortGoal("Cannot determine robot pose");
          return;
     }
-    getPose(poseMap, x, y, yaw);
+    getPose(poseFrameId, x, y, yaw);
     p1.pose.position.x = x;
     p1.pose.position.y = y;
-    p1.header.frame_id = mapFrame;
+    p1.header.frame_id = frameId;
     path.poses.push_back(p1);
 
     pathPub.publish(path);
@@ -403,12 +408,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         sleep(localizationLatency);
 
     // Final rotation as specified in goal
-    if (!getTransform("base_link", mapFrame, poseMap)) {
+    tf2::Transform finalPose;
+    if (!getTransform("base_link", goalFrame, finalPose)) {
          abortGoal("Cannot determine robot pose for final rotation");
          return;
     }
 
-    getPose(poseMap, x, y, yaw);
+    getPose(finalPose, x, y, yaw);
     rotate(goalYaw - yaw);
 
     actionServer->setSucceeded();
