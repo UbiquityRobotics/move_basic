@@ -11,19 +11,10 @@ driving straight toward it.  It is designed to provide the same interfaces as
 First you must install ROS (Robot Operating System),
 see [install ROS](http://wiki.ros.org/ROS/Installation) for more details.
 
-Currently you must install from source--binaries are not yet available.
-First, create a ROS catkin workspace, if you don't already have one:
+The package can be installed:
 
-     $ mkdir -p ~/catkin_ws/src
-     $ cd ~/catkin_ws/src
-     $ catkin_init_workspace
-
-Then get the source:
-
-     $ git clone https://github.com/UbiquityRobotics/move_basic 
-     $ cd ..
-     $ catkin_make    
-
+     $ sudo apt-get install ros-kinetic-move-basic
+     
 ## To run
 
 To run, give the following command:
