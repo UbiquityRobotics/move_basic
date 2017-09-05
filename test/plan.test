@@ -1,0 +1,10 @@
+<launch>
+
+  <node pkg="move_basic" name="move_basic" type="move_basic" output="screen">
+  </node>
+
+  <test test-name="plan_test" pkg="move_basic" type="plan_test">
+  </test>
+
+</launch>
+

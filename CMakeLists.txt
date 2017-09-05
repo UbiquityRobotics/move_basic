@@ -51,3 +51,18 @@ install(TARGETS move_basic
 ## Tests ##
 ###########
 
+if(CATKIN_ENABLE_TESTING)
+        find_package(catkin REQUIRED COMPONENTS
+          rostest roscpp actionlib tf2_ros)
+
+        # Tests need c++11
+        add_definitions(-std=c++11)
+
+        add_rostest_gtest(plan_test
+           test/plan.test
+           test/plan_test.cpp)
+        target_link_libraries(plan_test
+            ${catkin_LIBRARIES})
+
+endif()
+
