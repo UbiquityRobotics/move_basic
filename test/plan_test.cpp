@@ -1,3 +1,6 @@
+/*
+ Test move_basic by sending a goal and looking at the planned path
+*/
 
 #include <gtest/gtest.h>
 
@@ -16,27 +19,36 @@
 
 typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
 
-
-class PlanTest : public ::testing::Test {
+class PlanTest : public ::testing::Test
+{
 protected:
-  virtual void SetUp() { 
+  virtual void SetUp()
+  { 
     plan_sub = nh.subscribe("/plan", 1, &PlanTest::plan_callback, this);
     cmd_sub = nh.subscribe("/cmd_vel", 1, &PlanTest::cmd_callback, this);
-    result_sub = nh.subscribe("/move_base/result", 1, &PlanTest::result_callback, this);
+    result_sub = nh.subscribe("/move_base/result", 1,
+                              &PlanTest::result_callback, this);
+    
+    publish_global_pose = false;
     got_plan = false;
     set_odom(tf2::Transform(I));
+    set_global_pose(tf2::Transform(I));
 
     tf_thread = boost::thread(boost::bind(&PlanTest::tf_thread_func, this));
-    //spin_thread = boost::thread(boost::bind(&PlanTest::spin_thread_func, this));
+    spinner = new ros::AsyncSpinner(3);
+    spinner->start();
   }
 
-  virtual void TearDown() {}
+  virtual void TearDown()
+  {
+    spinner->stop();
+    delete spinner;
+  }
  
   void send_goal(const std::string frame, const tf2::Transform& goal)
   {
     MoveBaseClient ac("move_base", true);
 
-    //wait for the action server to come up
     while(!ac.waitForServer(ros::Duration(5.0))) {
       ROS_INFO("Waiting for the move_base action server to come up");
     }
@@ -57,23 +69,12 @@ protected:
     goal_.target_pose.pose.position.z = t.z();
 
     ROS_INFO("Sending goal");
-    ac.sendGoal(goal_, boost::bind(&PlanTest::done_callback, this, _1, _2));
-    //ac.waitForResult();
+    ac.sendGoal(goal_);
   }
 
   void result_callback(const move_base_msgs::MoveBaseActionResultConstPtr& result)
   {
     done = true;
-  }
-
-  // This does not seem to be getting called
-  void done_callback(const actionlib::SimpleClientGoalState& state,
-              const move_base_msgs::MoveBaseResultConstPtr& result)
-  {
-     ROS_INFO("Finished in state [%s]", state.toString().c_str());
-     printf("done\n");
-     set_odom(tf2::Transform(I, tf2::Vector3(2, 2, 2)));
-     done = true;
   }
 
   void cmd_callback(const geometry_msgs::Twist& msg)
@@ -84,11 +85,17 @@ protected:
   void plan_callback(const nav_msgs::Path& msg)
   {
     got_plan = true;
+    plan = msg;
   }
 
   void set_odom(tf2::Transform tf)
   {
     odom_tf.transform = tf2::toMsg(tf);
+  }
+
+  void set_global_pose(tf2::Transform tf)
+  {
+    global_tf.transform = tf2::toMsg(tf);
   }
 
   ros::NodeHandle nh;
@@ -97,50 +104,57 @@ protected:
   ros::Subscriber cmd_sub;
   ros::Subscriber result_sub;
 
+  volatile bool publish_global_pose;
   volatile bool got_plan;
   volatile bool got_cmd;
   volatile bool done;
   geometry_msgs::TransformStamped odom_tf;
+  geometry_msgs::TransformStamped global_tf;
+  nav_msgs::Path plan;
 
   tf2_ros::TransformBroadcaster broadcaster;
   tf2::Quaternion I = tf2::Quaternion::getIdentity();
 
   boost::thread tf_thread;
   boost::thread spin_thread;
+  ros::AsyncSpinner* spinner;
 
 public:
   void tf_thread_func()
   {
-    geometry_msgs::TransformStamped ts;
     odom_tf.header.frame_id = "odom";
     odom_tf.child_frame_id = "base_link";
+    global_tf.header.frame_id = "map";
+    global_tf.child_frame_id = "odom";
+
     ros::Rate rate(10);
 
     while(nh.ok()) {
       odom_tf.header.stamp = ros::Time::now();
       broadcaster.sendTransform(odom_tf);
-      //ros::spinOnce();
+      if (publish_global_pose) {
+        global_tf.header.stamp = ros::Time::now();
+        broadcaster.sendTransform(global_tf);
+      }
       rate.sleep();
     }
   }
-
-  void spin_thread_func()
-  {
-    ros::spin();
-  }
 };
 
-TEST_F(PlanTest, forward_1_m) {
+TEST_F(PlanTest, forward_1_m)
+{
   ros::Rate rate(5);
   tf2::Vector3 one_meter(1, 0, 0);
-  set_odom(tf2::Transform(I));
+
   done = false;
   got_cmd = false;
   bool moved = false;
-ros::AsyncSpinner spinner(4);
- spinner.start();
+  publish_global_pose = false;
+
+  set_odom(tf2::Transform(I));
 
   rate.sleep();
+
   send_goal("base_link", tf2::Transform(I, one_meter));
 
   while (nh.ok() && !done) {
@@ -149,14 +163,43 @@ ros::AsyncSpinner spinner(4);
        set_odom(tf2::Transform(I, one_meter));
        moved = true;
     }
-    //ros::spinOnce();
     rate.sleep();
   }
+  ASSERT_EQ(true, got_plan);
+  ASSERT_EQ("odom", plan.header.frame_id);
+}
+
+TEST_F(PlanTest, global_1_m)
+{
+  ros::Rate rate(5);
+  tf2::Vector3 one_meter(1, 0, 0);
+
+  done = false;
+  got_cmd = false;
+  bool moved = false;
+  publish_global_pose = true;
+
+  set_odom(tf2::Transform(I));
+  set_global_pose(tf2::Transform(I));
+
+  rate.sleep();
+
+  send_goal("map", tf2::Transform(I, one_meter));
+
+  while (nh.ok() && !done) {
+    if (got_cmd && !moved) {
+       // pretend we did it
+       set_odom(tf2::Transform(I, one_meter));
+       moved = true;
+    }
+    rate.sleep();
+  }
+  ASSERT_EQ(true, got_plan);
+  ASSERT_EQ("map", plan.header.frame_id);
 }
 
 int main(int argc, char** argv)
 {
-
   testing::InitGoogleTest(&argc, argv);
   ros::init(argc, argv, "PlanTest");
   return RUN_ALL_TESTS();
