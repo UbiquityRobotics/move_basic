@@ -312,8 +312,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
       after each step, and execute in the odom frame.
     */
          
-    tf2::Transform goal;
-    tf2::fromMsg(msg->target_pose.pose, goal);
+    tf2::Transform goalRaw;
+    tf2::fromMsg(msg->target_pose.pose, goalRaw);
     std::string frameId = msg->target_pose.header.frame_id;
 
     // Needed for RobotCommander
@@ -321,7 +321,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         frameId = frameId.substr(1);
 
     double x, y, yaw;
-    getPose(goal, x, y, yaw);
+    getPose(goalRaw, x, y, yaw);
 
     ROS_INFO("Received goal %f %f %f %s", x, y, rad2deg(yaw), frameId.c_str());
 
@@ -333,36 +333,41 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     std::string goalFrame;
     double goalYaw;
 
-    tf2::Transform goalMap;
-    if (!transformPose(frameId, mapFrame, goal, goalMap)) {
-        ROS_WARN("Will attempt to operate in %s frame", frameId.c_str());
-        goalFrame = frameId;
-        goalYaw = yaw;
+    // special case when relative goal is sent
+    if (frameId == "base_link") {
+        goalFrame = "odom"; 
     }
     else {
-        ROS_INFO("Goal in %s  %f %f %f", mapFrame.c_str(), x, y, rad2deg(goalYaw));
         goalFrame = mapFrame;
-        getPose(goalMap, x, y, goalYaw);
     }
+
+    tf2::Transform goal;
+    if (!transformPose(frameId, goalFrame, goalRaw, goal)) {
+         abortGoal("Cannot determine robot pose");
+         return;
+    }
+
+    getPose(goal, x, y, goalYaw);
+    ROS_INFO("Goal in %s  %f %f %f", goalFrame.c_str(), x, y, rad2deg(goalYaw));
 
     // publish our planned path
     nav_msgs::Path path;
     geometry_msgs::PoseStamped p0, p1;
-    path.header.frame_id = frameId;
+    path.header.frame_id = goalFrame;
     p0.pose.position.x = x;
     p0.pose.position.y = y;
-    p0.header.frame_id = frameId;
+    p0.header.frame_id = goalFrame;
     path.poses.push_back(p0);
 
     tf2::Transform poseFrameId;
-    if (!getTransform("base_link", frameId, poseFrameId)) {
+    if (!getTransform("base_link", goalFrame, poseFrameId)) {
          abortGoal("Cannot determine robot pose");
          return;
     }
     getPose(poseFrameId, x, y, yaw);
     p1.pose.position.x = x;
     p1.pose.position.y = y;
-    p1.header.frame_id = frameId;
+    p1.header.frame_id = goalFrame;
     path.poses.push_back(p1);
 
     pathPub.publish(path);
@@ -392,13 +397,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // Do linear portion of goal
     tf2::Transform goalInBase;
     if (!transformPose(frameId, "base_link", goal, goalInBase)) {
-         ROS_WARN("Cannot determine robot pose for linear");
+         ROS_WARN("Cannot determine robot pose for linear 1");
          return;
     }
 
     tf2::Vector3 linear = goalInBase.getOrigin();
-    // we could check for linear.y being within linearTolerance, however
-    // if linear.x is large, then that requires a high degree of angular accuracy
+    // we could check for linear.y being within linearTolerance, however if
+    // linear.x is large, then that requires a high degree of angular accuracy
     ROS_INFO("Requested distance %f %f", linear.x(), linear.y());
 
     if (linear.x() > linearTolerance)
@@ -418,6 +423,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     rotate(goalYaw - yaw);
 
     actionServer->setSucceeded();
+    ROS_INFO("Done goal");
 }
 
 
@@ -563,7 +569,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
     tf2::Transform poseOdomInitial;
     if (!getTransform("base_link", "odom", poseOdomInitial)) {
-         abortGoal("Cannot determine robot pose for linear");
+         abortGoal("Cannot determine robot pose for linear 2");
          return false;
     }
 
@@ -573,7 +579,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
         tf2::Transform poseOdom;
         if (!getTransform("base_link", "odom", poseOdom)) {
-             ROS_WARN("Cannot determine robot pose for linear");
+             ROS_WARN("Cannot determine robot pose for linear 3");
              continue;
         }
 
