@@ -1,5 +1,9 @@
 
 # move_basic
+Travis:  [![Build Status](https://travis-ci.org/UbiquityRobotics/move_basic.svg?branch=kinetic-devel)](https://travis-ci.org/UbiquityRobotics/move_basic)
+
+Jenkins: [![Build Status](http://build.ros.org/view/Kdev/job/Kdev__move_basic__ubuntu_xenial_amd64/badge/icon)](http://build.ros.org/view/Kdev/job/Kdev__move_basic__ubuntu_xenial_amd64/)
+
 
 This package contains a node that performs very basic navigation.
 The path planning consists of rotating in place to face the goal and then
