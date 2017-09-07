@@ -375,7 +375,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // Initial rotation to face goal
     for (int i=0; i<rotationAttempts; i++) {
         tf2::Transform goalInBase;
-        if (!transformPose(frameId, "base_link", goal, goalInBase)) {
+        if (!transformPose(frameId, "base_link", goalRaw, goalInBase)) {
             ROS_WARN("Cannot determine robot pose for rotation");
             return;
         }
@@ -396,8 +396,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     // Do linear portion of goal
     tf2::Transform goalInBase;
-    if (!transformPose(frameId, "base_link", goal, goalInBase)) {
-         ROS_WARN("Cannot determine robot pose for linear 1");
+    if (!transformPose(frameId, "base_link", goalRaw, goalInBase)) {
+         ROS_WARN("Cannot determine robot pose for linear");
          return;
     }
 
@@ -569,7 +569,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
     tf2::Transform poseOdomInitial;
     if (!getTransform("base_link", "odom", poseOdomInitial)) {
-         abortGoal("Cannot determine robot pose for linear 2");
+         abortGoal("Cannot determine robot pose for linear");
          return false;
     }
 
@@ -579,7 +579,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
         tf2::Transform poseOdom;
         if (!getTransform("base_link", "odom", poseOdom)) {
-             ROS_WARN("Cannot determine robot pose for linear 3");
+             ROS_WARN("Cannot determine robot pose for linear");
              continue;
         }
 
