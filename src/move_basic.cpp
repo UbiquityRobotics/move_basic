@@ -84,7 +84,7 @@ class MoveBasic {
     double obstacleDist;
     std::string mapFrame;
 
-    double straightBackThreshold;
+    double reverseWithoutTurningThreshold;
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -176,7 +176,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
     // Reverse distances for which rotation won't be performed
-    nh.param<double>("straight_back_threshold", straightBackThreshold, 0.5);
+    nh.param<double>("reverse_without_turning_threshold",
+                      reverseWithoutTurningThreshold, 0.5);
 
     nh.param<std::string>("map_frame", mapFrame, "map");
 
@@ -378,8 +379,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
          return;
     }
     tf2::Vector3 linear = goalInBase.getOrigin();
-    ROS_INFO("Forward = %f", linear.x());
-    bool straightBack = (linear.x() > -straightBackThreshold && linear.x() < 0.0);
+    bool reverseWithoutTurning = 
+        (-reverseWithoutTurningThreshold < linear.x() && linear.x() < 0.0);
 
 
     // Initial rotation to face goal
@@ -393,8 +394,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         tf2::Vector3 offset = goalInBase.getOrigin();
         if (offset.length() != 0.0) {
             double requestedYaw = atan2(offset.y(), offset.x());
-            if (straightBack) {
-                if (requestedYaw > 0) {
+            if (reverseWithoutTurning) {
+                if (requestedYaw > 0.0) {
                     requestedYaw = -M_PI + requestedYaw;
                 }
                 else {
@@ -417,7 +418,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     ROS_INFO("Requested distance %f", dist);
 
     if (dist > linearTolerance)
-        if (straightBack) {
+        if (reverseWithoutTurning) {
             dist = - dist;
         }
         if (!moveLinear(dist)) {
@@ -539,7 +540,7 @@ bool MoveBasic::rotate(double yaw)
 
         double velocity = 0;
 
-        if (angleRemaining < 0) {
+        if (angleRemaining < 0.0) {
             velocity = -speed;
         }
         else {
