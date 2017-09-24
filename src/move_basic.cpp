@@ -400,9 +400,11 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // we could check for linear.y being within linearTolerance, however
     // if linear.x is large, then that requires a high degree of angular accuracy
     ROS_INFO("Requested distance %f %f", linear.x(), linear.y());
+    double dist = sqrt(linear.x()*linear.x()+linear.y()*linear.y());
+    ROS_INFO("Requested distance %f", dist);
 
-    if (linear.x() > linearTolerance)
-        if (!moveLinear(linear.x())) {
+    if (dist > linearTolerance)
+        if (!moveLinear(dist)) {
             return;
         }
         sleep(localizationLatency);
