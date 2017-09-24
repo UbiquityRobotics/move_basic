@@ -84,6 +84,8 @@ class MoveBasic {
     double obstacleDist;
     std::string mapFrame;
 
+    double straightBackThreshold;
+
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
@@ -172,6 +174,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("front_to_lidar", frontToLidar, 0.11);
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
+
+    // Reverse distances for which rotation won't be performed
+    nh.param<double>("straight_back_threshold", straightBackThreshold, 0.5);
 
     nh.param<std::string>("map_frame", mapFrame, "map");
 
@@ -367,6 +372,16 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     pathPub.publish(path);
 
+    tf2::Transform goalInBase;
+    if (!transformPose(frameId, "base_link", goal, goalInBase)) {
+         ROS_WARN("Cannot determine robot pose for linear");
+         return;
+    }
+    tf2::Vector3 linear = goalInBase.getOrigin();
+    ROS_INFO("Forward = %f", linear.x());
+    bool straightBack = (linear.x() > -straightBackThreshold && linear.x() < 0.0);
+
+
     // Initial rotation to face goal
     for (int i=0; i<rotationAttempts; i++) {
         tf2::Transform goalInBase;
@@ -378,6 +393,14 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         tf2::Vector3 offset = goalInBase.getOrigin();
         if (offset.length() != 0.0) {
             double requestedYaw = atan2(offset.y(), offset.x());
+            if (straightBack) {
+                if (requestedYaw > 0) {
+                    requestedYaw = -M_PI + requestedYaw;
+                }
+                else {
+                    requestedYaw = M_PI - requestedYaw;
+                }
+            }
 
             if (std::abs(requestedYaw) < angularTolerance) {
                 break;
@@ -390,20 +413,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     // Do linear portion of goal
-    tf2::Transform goalInBase;
-    if (!transformPose(frameId, "base_link", goal, goalInBase)) {
-         ROS_WARN("Cannot determine robot pose for linear");
-         return;
-    }
-
-    tf2::Vector3 linear = goalInBase.getOrigin();
-    // we could check for linear.y being within linearTolerance, however
-    // if linear.x is large, then that requires a high degree of angular accuracy
-    ROS_INFO("Requested distance %f %f", linear.x(), linear.y());
-    double dist = sqrt(linear.x()*linear.x()+linear.y()*linear.y());
+    double dist = linear.length();
     ROS_INFO("Requested distance %f", dist);
 
     if (dist > linearTolerance)
+        if (straightBack) {
+            dist = - dist;
+        }
         if (!moveLinear(dist)) {
             return;
         }
@@ -582,13 +598,12 @@ bool MoveBasic::moveLinear(double requestedDistance)
         tf2::Vector3 travelled = poseOdomInitial.getOrigin() - poseOdom.getOrigin();
         double distTravelled = travelled.length();;
 
-        double distRemaining = requestedDistance - distTravelled;
+        double distRemaining = std::abs(requestedDistance) - std::abs(distTravelled);
 
         double velocity = std::max(minLinearVelocity,
             std::min(maxLinearVelocity, std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
-              std::sqrt(2.0 * linearAcceleration * std::min(obstacleDist,
-                std::abs(distRemaining))))));
+              std::sqrt(2.0 * linearAcceleration * std::min(obstacleDist, distRemaining)))));
 
         // Stop if there is an obstacle in the distance we would travel in
         // 1 second
@@ -614,6 +629,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
             waitingForObstacle = false;
             // start off again smoothly
             requestedDistance = distRemaining;
+            distTravelled = 0.0;
             poseOdomInitial = poseOdom;
         }
 
@@ -623,12 +639,13 @@ bool MoveBasic::moveLinear(double requestedDistance)
             velocity = 0;
         }
 
-        //ROS_INFO("%f %f %f", distTravelled, distRemaining, velocity);
-
-        if (distTravelled > requestedDistance - linearTolerance) {
+        if (std::abs(distTravelled) > std::abs(requestedDistance) - linearTolerance) {
             velocity = 0;
             done = true;
             ROS_INFO("Done linear, error %f meters", distRemaining);
+        }
+        if (requestedDistance < 0) { 
+            velocity = -velocity;
         }
         sendCmd(0, velocity);
     }
