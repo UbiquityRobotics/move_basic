@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.2 (2017-10-08)
+------------------
 * Will reverse for small distances without rotating
 * Try to operate in the frame the goal is in if no map frame
 * Add map_frame param
