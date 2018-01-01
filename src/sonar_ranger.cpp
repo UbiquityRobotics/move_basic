@@ -59,8 +59,8 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             origin.vector.z = 0;
             geometry_msgs::Vector3Stamped base_origin;
             tf2::doTransform(origin, base_origin, tfs);
-            fromMsg(base_origin.vector, A);
-            ROS_INFO("normal %f %f %f", S.x(), S.y(), S.z());
+            fromMsg(base_origin.vector, S);
+            ROS_INFO("origin %f %f %f", S.x(), S.y(), S.z());
 
             // vector normal to sensor - represents the center of a 1m cone
             geometry_msgs::Vector3Stamped normal;
@@ -212,6 +212,4 @@ void SonarSensor::update(float range, ros::Time stamp)
     this->stamp = stamp;
     left_vertex = origin + left_vec * range;
     right_vertex = origin + right_vec * range;
-    left_vertex += tf2::Vector3(0, 0, 0.1);
-    right_vertex += tf2::Vector3(0, 0, 0.1);
 }
