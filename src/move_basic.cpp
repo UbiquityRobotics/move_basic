@@ -45,6 +45,8 @@
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
 
+#include "move_basic/sonar_ranger.h"
+
 #include <string>
 
 typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
@@ -63,6 +65,7 @@ class MoveBasic {
 
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
+    SonarRanger sonar_ranger;
 
     double maxAngularVelocity;
     double minAngularVelocity;
@@ -184,6 +187,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
     linePub = ros::Publisher(nh.advertise<visualization_msgs::Marker>("/obstacle", 1));
+
+    sonar_ranger.initialize();
 
     scanSub = nh.subscribe("/scan", 1, &MoveBasic::scanCallback, this);
 
@@ -487,9 +492,10 @@ void MoveBasic::drawLine(double x0, double y0, double x1, double y1)
 
 void MoveBasic::run()
 {
-    ros::Rate r(20);
+    ros::Rate r(10);
     while (ros::ok()) {
         ros::spinOnce();
+        obstacleDist = sonar_ranger.obstacle_dist(robotWidth);
         r.sleep();
     }
 }

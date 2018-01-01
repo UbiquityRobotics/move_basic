@@ -25,9 +25,9 @@ catkin_package(INCLUDE_DIRS DEPENDS)
 
 add_definitions(-std=c++11)
 
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} include)
 
-add_executable(move_basic src/move_basic.cpp)
+add_executable(move_basic src/sonar_ranger.cpp src/move_basic.cpp)
 add_dependencies(move_basic ${catkin_EXPORTED_TARGETS})
 
 target_link_libraries(move_basic ${catkin_LIBRARIES})
