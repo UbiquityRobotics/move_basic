@@ -52,18 +52,17 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             tf2::Vector3 S, A, B, C;
         
             // sensor origin
-            geometry_msgs::Vector3Stamped origin;
+            geometry_msgs::PointStamped origin;
             origin.header.frame_id = frame;
-            origin.vector.x = 0;
-            origin.vector.y = 0;
-            origin.vector.z = 0;
-            geometry_msgs::Vector3Stamped base_origin;
+            origin.point.x = 0;
+            origin.point.y = 0;
+            origin.point.z = 0;
+            geometry_msgs::PointStamped base_origin;
             tf2::doTransform(origin, base_origin, tfs);
-            fromMsg(base_origin.vector, S);
+            fromMsg(base_origin.point, S);
             ROS_INFO("origin %f %f %f", S.x(), S.y(), S.z());
 
             // vector normal to sensor - represents the center of a 1m cone
-/*
             geometry_msgs::Vector3Stamped normal;
             normal.vector.x = 1.0;
             normal.vector.y = 0.0;
@@ -76,7 +75,6 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             // hack
             int id = ids[frame];
             draw_line(S, S+A, 1, 0, 0, id + 100);
-*/
 
             // vectors at the edges of cone
             double theta = msg->field_of_view / 2.0;
