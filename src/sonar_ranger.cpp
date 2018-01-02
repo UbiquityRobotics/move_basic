@@ -63,6 +63,7 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             ROS_INFO("origin %f %f %f", S.x(), S.y(), S.z());
 
             // vector normal to sensor - represents the center of a 1m cone
+/*
             geometry_msgs::Vector3Stamped normal;
             normal.vector.x = 1.0;
             normal.vector.y = 0.0;
@@ -75,6 +76,7 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             // hack
             int id = ids[frame];
             draw_line(S, S+A, 1, 0, 0, id + 100);
+*/
 
             // vectors at the edges of cone
             double theta = msg->field_of_view / 2.0;
@@ -163,7 +165,7 @@ float SonarRanger::obstacle_dist(float width)
 
         ROS_INFO("checking %s", sensor.frame_id.c_str());
         float age = (now - sensor.stamp).toSec();
-        if (age < 0.6) {
+        if (age < 1.0) {
            float x0 = sensor.left_vertex.x();
            float y0 = sensor.left_vertex.y();
            float x1 = sensor.right_vertex.x();
@@ -186,7 +188,8 @@ float SonarRanger::obstacle_dist(float width)
         }
     }
     ROS_INFO("min_dist %f", min_dist);
-    draw_line(tf2::Vector3(min_dist, -width2, 0), tf2::Vector3(min_dist, width2, 0), 0.5f, 0.5f, 0.5f, 1000);
+    draw_line(tf2::Vector3(min_dist, -width2, 0),
+              tf2::Vector3(min_dist, width2, 0), 1, 0, 0, 1000);
     return min_dist;
 }
 
