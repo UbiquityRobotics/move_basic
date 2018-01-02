@@ -37,7 +37,7 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
     ROS_INFO("Callback %s", frame.c_str());
 
     // ignore min values
-    if (msg->range <= msg->min_range) {
+    if (msg->range <= msg->min_range || msg->range >= msg->max_range) {
        return;
     }
 
