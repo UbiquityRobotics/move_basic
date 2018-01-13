@@ -45,7 +45,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
 
-#include "move_basic/sonar_ranger.h"
+#include "move_basic/obstacle_detector.h"
 
 #include <string>
 
@@ -62,10 +62,10 @@ class MoveBasic {
     ros::Publisher linePub;
 
     std::unique_ptr<MoveBaseActionServer> actionServer;
+    std::unique_ptr<ObstacleDetector> obstacle_detector;
 
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
-    SonarRanger sonar_ranger;
 
     double maxAngularVelocity;
     double minAngularVelocity;
@@ -188,8 +188,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
     linePub = ros::Publisher(nh.advertise<visualization_msgs::Marker>("/obstacle", 1));
 
-    sonar_ranger.initialize();
-
     scanSub = nh.subscribe("/scan", 1, &MoveBasic::scanCallback, this);
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
@@ -202,6 +200,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     actionServer->start();
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
       "/move_base/goal", 1);
+
+    obstacle_detector.reset(new ObstacleDetector(nh, &tfBuffer));
 
     ROS_INFO("Move Basic ready");
 }
@@ -492,10 +492,9 @@ void MoveBasic::drawLine(double x0, double y0, double x1, double y1)
 
 void MoveBasic::run()
 {
-    ros::Rate r(10);
+    ros::Rate r(20);
     while (ros::ok()) {
         ros::spinOnce();
-        obstacleDist = sonar_ranger.obstacle_dist(robotWidth);
         r.sleep();
     }
 }

@@ -8,16 +8,15 @@
 #include <tf2_ros/transform_listener.h>
 #include <sensor_msgs/Range.h>
 #include <visualization_msgs/Marker.h>
-#include "move_basic/sonar_ranger.h"
+#include "move_basic/obstacle_detector.h"
 
 
-SonarRanger::SonarRanger(): listener(tf_buffer)
+ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh, 
+                                   tf2_ros::Buffer *tf_buffer)
 {
-}
+    this->tf_buffer = tf_buffer;
+    sensor_id = 0;
 
-void SonarRanger::initialize()
-{
-    ros::NodeHandle nh("");
     line_pub = ros::Publisher(nh.advertise<visualization_msgs::Marker>("/sonar", 1));
 
     // TODO: make params
@@ -26,27 +25,27 @@ void SonarRanger::initialize()
     for (int i=0; i<16; i++) {
         std::string topic = str(boost::format{"%1%%2%"} % topic_prefix % i);
         ROS_INFO("Subscribing to %s", topic.c_str());
-        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1, &SonarRanger::callback, this));
-        ids[topic] = i;
+        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1, &ObstacleDetector::callback, this));
     }
 }
 
-void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
+void ObstacleDetector::callback(const sensor_msgs::Range::ConstPtr &msg)
 {
     std::string frame = msg->header.frame_id;
-    ROS_INFO("Callback %s", frame.c_str());
+    ROS_INFO("Callback %s %f", frame.c_str(), msg->range);
 
     // ignore min values
+    // XXX do we want to do this?
     if (msg->range <= msg->min_range || msg->range >= msg->max_range) {
        return;
     }
 
     // create sensor object if this is a new sensor
-    std::map<std::string,SonarSensor>::iterator it = sensors.find(frame);
+    std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
     if (it == sensors.end()) {
         try {
             geometry_msgs::TransformStamped tfs =
-                tf_buffer.lookupTransform("base_link", frame, ros::Time(0));
+                tf_buffer->lookupTransform("base_link", frame, ros::Time(0));
             
             tf2::Transform tf;
             tf2::Vector3 S, A, B, C;
@@ -72,9 +71,7 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             tf2::doTransform(normal, base_normal, tfs);
             fromMsg(base_normal.vector, A);
             ROS_INFO("normal %f %f %f", A.x(), A.y(), A.z());
-            // hack
-            int id = ids[frame];
-            draw_line(S, S+A, 1, 0, 0, id + 100);
+            //draw_line(S, S+A, 1, 0, 0, sensor_id + 100);
 
             // vectors at the edges of cone
             double theta = msg->field_of_view / 2.0;
@@ -101,7 +98,7 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
             ROS_INFO("right %f %f %f", C.x(), C.y(), C.z());
             //draw_line(S, S+C, 0, 0, 1);
 
-            SonarSensor sensor(frame, S, B, C);
+            RangeSensor sensor(sensor_id++, frame, S, B, C);
             sensors[frame] = sensor;
             sensor.update(msg->range, msg->header.stamp);
         }
@@ -110,15 +107,15 @@ void SonarRanger::callback(const sensor_msgs::Range::ConstPtr &msg)
         }
     }
     else {
-        SonarSensor& sensor = sensors[frame];
-        int id = ids[frame];
+        RangeSensor& sensor = sensors[frame];
         sensor.update(msg->range, msg->header.stamp);
-        draw_line(sensor.origin, sensor.left_vertex, 0, 0, 1, id + 200);
-        draw_line(sensor.origin, sensor.right_vertex, 0, 1, 0, id + 300);
+        draw_line(sensor.origin, sensor.left_vertex, 0, 0, 1, sensor.id + 200);
+        draw_line(sensor.origin, sensor.right_vertex, 0, 1, 0, sensor.id + 300);
+        draw_line(sensor.left_vertex, sensor.right_vertex, 0.5, 0.5, 0, sensor.id + 400);
     }
 }
 
-void SonarRanger::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
+void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                             float r, float g, float b, int id)
 {
     visualization_msgs::Marker line;
@@ -149,7 +146,7 @@ void SonarRanger::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
 
 
 // check for obstacles - only checks forward direction
-float SonarRanger::obstacle_dist(float width)
+float ObstacleDetector::obstacle_dist(float width)
 {
     float min_dist = 10.0f;
     float width2 = width / 2.0f;
@@ -157,9 +154,9 @@ float SonarRanger::obstacle_dist(float width)
     width2 = 0.12;
     ros::Time now = ros::Time::now();
 
-    std::map<std::string,SonarSensor>::iterator it;
+    std::map<std::string,RangeSensor>::iterator it;
     for (it = sensors.begin(); it != sensors.end(); it++) {
-        SonarSensor& sensor = it->second;
+        RangeSensor& sensor = it->second;
 
         ROS_INFO("checking %s", sensor.frame_id.c_str());
         float age = (now - sensor.stamp).toSec();
@@ -192,15 +189,16 @@ float SonarRanger::obstacle_dist(float width)
 }
 
 
-SonarSensor::SonarSensor()
+RangeSensor::RangeSensor()
 {
 }
 
-SonarSensor::SonarSensor(std::string frame_id,
+RangeSensor::RangeSensor(int id, std::string frame_id,
                          const tf2::Vector3& origin,
                          const tf2::Vector3& left_vec,
                          const tf2::Vector3& right_vec)
 {
+    this->id = id;
     this->frame_id = frame_id;
     this->origin = origin;
     this->left_vec = left_vec;
@@ -208,7 +206,7 @@ SonarSensor::SonarSensor(std::string frame_id,
     ROS_INFO("Adding sensor %s", frame_id.c_str());
 }
 
-void SonarSensor::update(float range, ros::Time stamp)
+void RangeSensor::update(float range, ros::Time stamp)
 {
     this->stamp = stamp;
     left_vertex = origin + left_vec * range;
