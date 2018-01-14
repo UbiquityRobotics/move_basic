@@ -52,6 +52,9 @@
  `theta` would change by for the point to intersect with one of the four
  line segments representing the robot footprint.
 
+ Coordinate systems are as specified in http://www.ros.org/reps/rep-0103.html
+ x forward, y left
+
  Jim Vaughan <jimv@mrjim.com> January 2018
 
 */
@@ -75,8 +78,12 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
 
     // Footprint
     W = nh.param<float>("footprint_w", 0.04);
-    F = nh.param<float>("footprint_f", 0.04);
+    F = nh.param<float>("footprint_f", 0.05);
     B = nh.param<float>("footprint_r", 0.12);
+
+    // To test if obstacles will intersect when rotating
+    front_diag = W*W + F*F;
+    back_diag = W*W + B*B;
 
     // TODO: make into a single topic
     std::string topic_prefix = "sonar_";
@@ -84,8 +91,12 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     for (int i=0; i<16; i++) {
         std::string topic = str(boost::format{"%1%%2%"} % topic_prefix % i);
         ROS_INFO("Subscribing to %s", topic.c_str());
-        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1, &ObstacleDetector::sensor_callback, this));
+        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1,
+            &ObstacleDetector::sensor_callback, this));
     }
+    //XXX for testing
+    //obstacle_angle(true);
+    //obstacle_angle(false);
 }
 
 void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
@@ -120,22 +131,10 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
             fromMsg(base_origin.point, S);
             ROS_INFO("origin %f %f %f", S.x(), S.y(), S.z());
 
-            // vector normal to sensor - represents the center of a 1m cone
-            geometry_msgs::Vector3Stamped normal;
-            normal.vector.x = 1.0;
-            normal.vector.y = 0.0;
-            normal.vector.z = 0.0;
-            normal.header.frame_id = frame;
-            geometry_msgs::Vector3Stamped base_normal;
-            tf2::doTransform(normal, base_normal, tfs);
-            fromMsg(base_normal.vector, A);
-            ROS_INFO("normal %f %f %f", A.x(), A.y(), A.z());
-            //draw_line(S, S+A, 1, 0, 0, sensor_id + 100);
-
-            // vectors at the edges of cone
+            // vectors at the edges of cone when cone height is 1m
             double theta = msg->field_of_view / 2.0;
-            float x = cos(theta);
-            float y = sin(theta);
+            float x = std::cos(theta);
+            float y = std::sin(theta);
 
             geometry_msgs::Vector3Stamped left;
             left.vector.x = x;
@@ -144,8 +143,6 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
             geometry_msgs::Vector3Stamped base_left;
             tf2::doTransform(left, base_left, tfs);
             fromMsg(base_left.vector, B);
-            ROS_INFO("left %f %f %f", B.x(), B.y(), B.z());
-            //draw_line(S, S+B, 0, 1, 0);
 
             geometry_msgs::Vector3Stamped right;
             right.vector.x = x;
@@ -154,8 +151,6 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
             geometry_msgs::Vector3Stamped base_right;
             tf2::doTransform(right, base_right, tfs);
             fromMsg(base_right.vector, C);
-            ROS_INFO("right %f %f %f", C.x(), C.y(), C.z());
-            //draw_line(S, S+C, 0, 0, 1);
 
             RangeSensor sensor(sensor_id++, frame, S, B, C);
             sensors[frame] = sensor;
@@ -170,7 +165,8 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
         sensor.update(msg->range, msg->header.stamp);
         draw_line(sensor.origin, sensor.left_vertex, 0, 0, 1, sensor.id + 200);
         draw_line(sensor.origin, sensor.right_vertex, 0, 1, 0, sensor.id + 300);
-        draw_line(sensor.left_vertex, sensor.right_vertex, 0.5, 0.5, 0, sensor.id + 400);
+        draw_line(sensor.left_vertex, sensor.right_vertex, 0.5, 0.5, 0,
+            sensor.id + 400);
     }
 }
 
@@ -265,22 +261,88 @@ float ObstacleDetector::obstacle_dist_reverse()
     return min_dist;
 }
 
-float ObstacleDetector::obstacle_dist_left()
+float degrees(float radians)
 {
-    float min_dist = 10.0f;
+    return radians * 180.0 / M_PI;
+}
+
+/*
+ Determine the rotation required to for to move point from its
+ initial rotation of theta to (x, y), and store the smallest
+ value
+*/
+inline void check_angle(float theta, float x, float y, bool left,
+                        float& min_dist)
+{
+    float theta_int = theta - std::atan2(y, x);
+    if (theta_int < -M_PI) {
+        theta_int += 2.0 * M_PI;
+    }
+    if (theta_int > M_PI) {
+        theta_int -= 2.0 * M_PI;
+    }
+    if (left && theta_int > 0 && theta_int < min_dist) {
+        min_dist = theta_int;
+    }
+    if (!left && theta_int < 0 && -theta_int < min_dist) {
+        min_dist = -theta_int;
+    }
+    printf("theta_int %f\n", degrees(theta_int));
+}
+
+float ObstacleDetector::obstacle_angle(bool left)
+{
+    float min_angle = M_PI;
     ros::Time now = ros::Time::now();
 
     get_points();
+    //XXX for testing
+    //points.push_back(tf2::Vector3(-0.0, 0.1, 0));
+
     for (int i=0; i<points.size(); i++) {
         tf2::Vector3& p = points[i];
         float x = p.x();
         float y = p.y();
-        // compute r, theta
-        // for each line segment, determine 0, 1, or 2 intersects
-        // find rotation for each one and make -pi <= angle <= pi
-        // find minimum rotation in appropriate direction
+        // initial orientation wrt base_link
+        float theta = std::atan2(y, x);
+        float r_squared = x*x + y*y;
+        if (r_squared < back_diag) {
+
+           // left side: y = W, -B < x < F
+           // right side: y = -W, -B < x < F
+           float xi = std::sqrt(r_squared - W*W);
+           if (-B < xi && xi < F) {
+               check_angle(theta, xi, W, left, min_angle);
+               check_angle(theta, xi, -W, left, min_angle);
+           }
+           if (-B < -xi && -xi < F) {
+               check_angle(theta, -xi, W, left, min_angle);
+               check_angle(theta, -xi, -W, left, min_angle);
+           }
+
+           // back side: x = -B, -W < y < W
+           float yi = std::sqrt(r_squared - B*B);
+           if (-W < yi && yi < W) {
+               check_angle(theta, -B, yi, left, min_angle);
+           }
+           if (-W < -yi && -yi < W) {
+               check_angle(theta, -B, -yi, left, min_angle);
+           }
+
+           // front side: x = F, -W < y < W
+           if (r_squared < front_diag) {
+               float yi = std::sqrt(r_squared - B*B);
+               if (-W < yi && yi < W) {
+                   check_angle(theta, F, yi, left, min_angle);
+               }
+               if (-W < -yi && -yi < W) {
+                   check_angle(theta, F, -yi, left, min_angle);
+               }
+           }
+        }
     }
-    return min_dist;
+    printf("min angle %f\n", degrees(min_angle));
+    return min_angle;
 }
 
 RangeSensor::RangeSensor(int id, std::string frame_id,

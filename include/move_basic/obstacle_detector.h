@@ -69,6 +69,7 @@ class ObstacleDetector
    int sensor_id;
    // footprint
    float W, F, B;
+   float front_diag, back_diag;
    std::vector<tf2::Vector3> points;
 
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
@@ -84,7 +85,6 @@ public:
    float obstacle_dist_reverse();
 
    // return distance in radians to closest obstacle
-   float obstacle_dist_left();
-   float obstacle_dist_right();
+   float obstacle_angle(bool left);
 };
 
