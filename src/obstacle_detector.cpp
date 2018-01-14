@@ -1,7 +1,60 @@
+/*
+ * Copyright (c) 2018, Ubiquity Robotics
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ * The views and conclusions contained in the software and documentation are
+ * those of the authors and should not be interpreted as representing official
+ * policies, either expressed or implied, of the FreeBSD Project.
+ *
+ */
 
-// Handle sonar range messages and determine distance to obstacle
+/*
 
-// Jim Vaughan <jimv@mrjim.com> January 2018
+ The `ObstacleDetector` class processes range messages to determine the
+ distance to obstacles.  As range messages are received, they are used
+ to either create or update a `RangeSensor` object.  `RangeSensor` objects
+ are created by looking up the transform from `base_link` to their frame
+ and computing a pair of vectors corresponding to the sides of their
+ cone.
+
+ The distance to the closest object is calculated based upon the positions
+ of the end points of the sensors' cones.  For this purpose, the robot
+ footprint is paramatized as having width `W` either side of base_link,
+ and length `F` forward of base_link and length `B` behind it.  This could
+ be extended to be an abitrary polygon.  When the robot is travelling forward
+ or backwards, the distance to the closest point that has an `x` value
+ between `-W` and `W` is used as the obstacle distance.
+
+ In the case of rotation in place, the angle that the robot will rotate
+ before hitting an obstacle is determined. This is done by converting
+ each of the `(x,y)` points into `(r, theta)` and determining how much
+ `theta` would change by for the point to intersect with one of the four
+ line segments representing the robot footprint.
+
+ Jim Vaughan <jimv@mrjim.com> January 2018
+
+*/
 
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_ros/buffer.h>
@@ -11,25 +64,31 @@
 #include "move_basic/obstacle_detector.h"
 
 
-ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh, 
+ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
                                    tf2_ros::Buffer *tf_buffer)
 {
     this->tf_buffer = tf_buffer;
     sensor_id = 0;
 
-    line_pub = ros::Publisher(nh.advertise<visualization_msgs::Marker>("/sonar", 1));
+    line_pub = ros::Publisher(
+                 nh.advertise<visualization_msgs::Marker>("/sonar", 1));
 
-    // TODO: make params
+    // Footprint
+    W = nh.param<float>("footprint_w", 0.04);
+    F = nh.param<float>("footprint_f", 0.04);
+    B = nh.param<float>("footprint_r", 0.12);
+
+    // TODO: make into a single topic
     std::string topic_prefix = "sonar_";
 
     for (int i=0; i<16; i++) {
         std::string topic = str(boost::format{"%1%%2%"} % topic_prefix % i);
         ROS_INFO("Subscribing to %s", topic.c_str());
-        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1, &ObstacleDetector::callback, this));
+        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1, &ObstacleDetector::sensor_callback, this));
     }
 }
 
-void ObstacleDetector::callback(const sensor_msgs::Range::ConstPtr &msg)
+void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
 {
     std::string frame = msg->header.frame_id;
     ROS_INFO("Callback %s %f", frame.c_str(), msg->range);
@@ -46,10 +105,10 @@ void ObstacleDetector::callback(const sensor_msgs::Range::ConstPtr &msg)
         try {
             geometry_msgs::TransformStamped tfs =
                 tf_buffer->lookupTransform("base_link", frame, ros::Time(0));
-            
+
             tf2::Transform tf;
             tf2::Vector3 S, A, B, C;
-        
+
             // sensor origin
             geometry_msgs::PointStamped origin;
             origin.header.frame_id = frame;
@@ -144,53 +203,84 @@ void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
     line_pub.publish(line);
 }
 
-
-// check for obstacles - only checks forward direction
-float ObstacleDetector::obstacle_dist(float width)
+void ObstacleDetector::get_points()
 {
-    float min_dist = 10.0f;
-    float width2 = width / 2.0f;
-    //XXX param
-    width2 = 0.12;
+    points.clear();
     ros::Time now = ros::Time::now();
 
     std::map<std::string,RangeSensor>::iterator it;
     for (it = sensors.begin(); it != sensors.end(); it++) {
         RangeSensor& sensor = it->second;
 
-        ROS_INFO("checking %s", sensor.frame_id.c_str());
         float age = (now - sensor.stamp).toSec();
         if (age < 1.0) {
-           float x0 = sensor.left_vertex.x();
-           float y0 = sensor.left_vertex.y();
-           float x1 = sensor.right_vertex.x();
-           float y1 = sensor.right_vertex.y();
-           ROS_INFO("age %f dists %f %f", age, x0, x1);
-           if (x0 > 0 && -width2 < y0 && y0 < width2) {
-               ROS_INFO("left %f %f", x0, y0);
-               if (x0 < min_dist) {
-                   ROS_INFO("** %s left", sensor.frame_id.c_str());
-                   min_dist = x0;
-               }
-           }
-           if (x1 > 0 && -width2 < y1 && y1 < width2) {
-               ROS_INFO("right %f %f", x1, y1);
-               if (x1 < min_dist) {
-                   ROS_INFO("** %s right", sensor.frame_id.c_str());
-                   min_dist = x1;
-               }
-           }
+           points.push_back(sensor.left_vertex);
+           points.push_back(sensor.right_vertex);
         }
     }
+}
+
+float ObstacleDetector::obstacle_dist_forward()
+{
+    float min_dist = 10.0f;
+    ros::Time now = ros::Time::now();
+
+    get_points();
+    for (int i=0; i<points.size(); i++) {
+        tf2::Vector3& p = points[i];
+        float x = p.x();
+        float y = p.y();
+        if (x > F && -W < y && y < W) {
+            if (x < min_dist) {
+                min_dist = x - F;
+            }
+        }
+    }
+
     ROS_INFO("min_dist %f", min_dist);
-    draw_line(tf2::Vector3(min_dist, -width2, 0),
-              tf2::Vector3(min_dist, width2, 0), 1, 0, 0, 1000);
+    draw_line(tf2::Vector3(min_dist, -W, 0),
+              tf2::Vector3(min_dist, W, 0), 1, 0, 0, 1000);
     return min_dist;
 }
 
-
-RangeSensor::RangeSensor()
+float ObstacleDetector::obstacle_dist_reverse()
 {
+    float min_dist = 10.0f;
+    ros::Time now = ros::Time::now();
+
+    get_points();
+    for (int i=0; i<points.size(); i++) {
+        tf2::Vector3& p = points[i];
+        float x = -p.x();
+        float y = p.y();
+        if (x > B && -W < y && y < W) {
+            if (x < min_dist) {
+                min_dist = x - B;
+            }
+        }
+    }
+    ROS_INFO("min_dist %f", min_dist);
+    draw_line(tf2::Vector3(min_dist, -W, 0),
+              tf2::Vector3(min_dist, W, 0), 1, 0, 0, 1000);
+    return min_dist;
+}
+
+float ObstacleDetector::obstacle_dist_left()
+{
+    float min_dist = 10.0f;
+    ros::Time now = ros::Time::now();
+
+    get_points();
+    for (int i=0; i<points.size(); i++) {
+        tf2::Vector3& p = points[i];
+        float x = p.x();
+        float y = p.y();
+        // compute r, theta
+        // for each line segment, determine 0, 1, or 2 intersects
+        // find rotation for each one and make -pi <= angle <= pi
+        // find minimum rotation in appropriate direction
+    }
+    return min_dist;
 }
 
 RangeSensor::RangeSensor(int id, std::string frame_id,
