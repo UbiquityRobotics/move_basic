@@ -80,6 +80,7 @@ class ObstacleDetector
    float max_age;
    float no_obstacle_dist;
    std::vector<tf2::Vector3> points;
+   bool have_test_points;
 
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                   float r, float g, float b, int id);
@@ -98,5 +99,9 @@ public:
 
    // return distance in radians to closest obstacle
    float obstacle_angle(bool left);
+
+   // for testing
+   void add_test_point(tf2::Vector3 p);
+   void clear_test_points();
 };
 

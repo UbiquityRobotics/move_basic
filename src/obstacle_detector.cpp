@@ -73,6 +73,7 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
 {
     this->tf_buffer = tf_buffer;
     sensor_id = 0;
+    have_test_points = false;
 
     line_pub = ros::Publisher(
                  nh.advertise<visualization_msgs::Marker>("/sonar", 1));
@@ -102,9 +103,6 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
         subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1,
             &ObstacleDetector::sensor_callback, this));
     }
-    //XXX for testing
-    //obstacle_angle(true);
-    //obstacle_angle(false);
 }
 
 void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
@@ -209,7 +207,9 @@ void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
 
 void ObstacleDetector::get_points()
 {
-    points.clear();
+    if (!have_test_points) {
+        points.clear();
+    }
     ros::Time now = ros::Time::now();
 
     for (const auto& kv : sensors) {
@@ -283,7 +283,6 @@ inline void ObstacleDetector::check_angle(float theta, float x, float y,
     if (!left && theta_int < 0 && -theta_int < min_dist) {
         min_dist = -theta_int;
     }
-    printf("theta_int %f\n", degrees(theta_int));
 }
 
 float ObstacleDetector::obstacle_angle(bool left)
@@ -292,8 +291,6 @@ float ObstacleDetector::obstacle_angle(bool left)
     ros::Time now = ros::Time::now();
 
     get_points();
-    //XXX for testing
-    //points.push_back(tf2::Vector3(-0.0, -0.1, 0));
 
     for (const auto& p : points) {
         float x = p.x();
@@ -301,14 +298,14 @@ float ObstacleDetector::obstacle_angle(bool left)
         // initial orientation wrt base_link
         float theta = std::atan2(y, x);
         float r_squared = x*x + y*y;
-        if (r_squared < back_diag) {
+        if (r_squared <= back_diag) {
            // left line segment:
-           //   y = robot_width, -robot_back_length < x < robot_front_length
+           //   y = robot_width, -robot_back_length <= x <= robot_front_length
            // right line segment:
-           //   y = -robot_width, -robot_back_length < x < robot_front_length
-           if (robot_width_sq < r_squared) {
+           //   y = -robot_width, -robot_back_length <= x <= robot_front_length
+           if (robot_width_sq <= r_squared) {
                float xi = std::sqrt(r_squared - robot_width_sq);
-               if (-robot_back_length < xi && xi < robot_front_length) {
+               if (-robot_back_length <= xi && xi <= robot_front_length) {
                    if (y > 0) {
                        check_angle(theta, xi, robot_width, left, min_angle);
                    }
@@ -316,7 +313,7 @@ float ObstacleDetector::obstacle_angle(bool left)
                        check_angle(theta, xi, -robot_width, left, min_angle);
                    }
                }
-               if (-robot_back_length < -xi && -xi < robot_front_length) {
+               if (-robot_back_length <= -xi && -xi <= robot_front_length) {
                    if (y > 0) {
                        check_angle(theta, -xi, robot_width, left, min_angle);
                    }
@@ -327,32 +324,44 @@ float ObstacleDetector::obstacle_angle(bool left)
            }
 
            // back line segment:
-           //   x = -robot_back_length, -robot_width < y < robot_width
-           if (x < 0 && robot_back_length_sq < r_squared) {
+           //   x = -robot_back_length, -robot_width <= y <= robot_width
+           if (x < 0 && robot_back_length_sq <= r_squared) {
                float yi = std::sqrt(r_squared - robot_back_length_sq);
-               if (-robot_width < yi && yi < robot_width) {
+               if (-robot_width <= yi && yi <= robot_width) {
                    check_angle(theta, -robot_back_length, yi, left, min_angle);
                }
-               if (-robot_width < -yi && -yi < robot_width) {
+               if (-robot_width <= -yi && -yi <= robot_width) {
                    check_angle(theta, -robot_back_length, -yi, left, min_angle);
                }
            }
 
            // front line segment:
-           //   x = robot_front_length, -robot_width < y < robot_width
-           if (x > 0 && r_squared < front_diag && robot_front_length_sq < r_squared) {
+           //   x = robot_front_length, -robot_width <= y <= robot_width
+           if (x > 0 && r_squared <= front_diag && robot_front_length_sq <= r_squared) {
                float yi = std::sqrt(r_squared - robot_front_length_sq);
-               if (-robot_width < yi && yi < robot_width) {
+               if (-robot_width <= yi && yi <= robot_width) {
                    check_angle(theta, robot_front_length, yi, left, min_angle);
                }
-               if (-robot_width < -yi && -yi < robot_width) {
+               if (-robot_width <= -yi && -yi <= robot_width) {
                    check_angle(theta, robot_front_length, -yi, left, min_angle);
                }
            }
         }
     }
-    printf("min angle %f\n", degrees(min_angle));
+    ROS_INFO("min angle %f\n", degrees(min_angle));
     return min_angle;
+}
+
+void ObstacleDetector::add_test_point(tf2::Vector3 p)
+{
+    points.push_back(p);
+    have_test_points = true;
+}
+
+void ObstacleDetector::clear_test_points()
+{
+    have_test_points = false;
+    points.clear();
 }
 
 RangeSensor::RangeSensor(int id, std::string frame_id,

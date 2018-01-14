@@ -45,9 +45,18 @@ install(TARGETS move_basic
 
 #install(DIRECTORY launch/
 #        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-#) 
+#)
 
 ###########
 ## Tests ##
 ###########
+
+if(CATKIN_ENABLE_TESTING)
+        find_package(rostest REQUIRED)
+
+        catkin_add_gtest(obstacle_test
+                src/obstacle_detector.cpp
+                test/test_obstacles.cpp)
+        target_link_libraries(obstacle_test ${catkin_LIBRARIES})
+endif()
 
