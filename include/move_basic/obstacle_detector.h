@@ -75,10 +75,14 @@ class ObstacleDetector
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                   float r, float g, float b, int id);
    void get_points();
+   void check_angle(float theta, float x, float y,
+                    bool left, float& min_dist);
 
 public:
    ObstacleDetector(ros::NodeHandle& nh, tf2_ros::Buffer *tf_buffer);
    void sensor_callback(const sensor_msgs::Range::ConstPtr &msg);
+
+   float degrees(float radians);
 
    // return distance in meters to closest obstacle
    float obstacle_dist_forward();

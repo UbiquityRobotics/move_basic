@@ -261,7 +261,7 @@ float ObstacleDetector::obstacle_dist_reverse()
     return min_dist;
 }
 
-float degrees(float radians)
+float ObstacleDetector::degrees(float radians)
 {
     return radians * 180.0 / M_PI;
 }
@@ -271,8 +271,8 @@ float degrees(float radians)
  initial rotation of theta to (x, y), and store the smallest
  value
 */
-inline void check_angle(float theta, float x, float y, bool left,
-                        float& min_dist)
+inline void ObstacleDetector::check_angle(float theta, float x, float y,
+                                          bool left, float& min_dist)
 {
     float theta_int = theta - std::atan2(y, x);
     if (theta_int < -M_PI) {
