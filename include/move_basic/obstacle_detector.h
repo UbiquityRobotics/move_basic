@@ -68,25 +68,33 @@ class ObstacleDetector
    tf2_ros::Buffer *tf_buffer;
    int sensor_id;
    // footprint
-   float W, F, B;
+   float robot_width;
+   float robot_front_length;
+   float robot_back_length;
+
+   float robot_width_sq;
+   float robot_front_length_sq;
+   float robot_back_length_sq;
    float front_diag, back_diag;
+
+   float max_age;
+   float no_obstacle_dist;
    std::vector<tf2::Vector3> points;
 
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                   float r, float g, float b, int id);
    void get_points();
    void check_angle(float theta, float x, float y,
-                    bool left, float& min_dist);
+                    bool left, float& min_dist) const;
+
+   float degrees(float radians) const;
 
 public:
    ObstacleDetector(ros::NodeHandle& nh, tf2_ros::Buffer *tf_buffer);
    void sensor_callback(const sensor_msgs::Range::ConstPtr &msg);
 
-   float degrees(float radians);
-
    // return distance in meters to closest obstacle
-   float obstacle_dist_forward();
-   float obstacle_dist_reverse();
+   float obstacle_dist(bool forward);
 
    // return distance in radians to closest obstacle
    float obstacle_angle(bool left);

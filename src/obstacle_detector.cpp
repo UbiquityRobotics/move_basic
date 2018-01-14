@@ -40,11 +40,12 @@
 
  The distance to the closest object is calculated based upon the positions
  of the end points of the sensors' cones.  For this purpose, the robot
- footprint is paramatized as having width `W` either side of base_link,
- and length `F` forward of base_link and length `B` behind it.  This could
- be extended to be an abitrary polygon.  When the robot is travelling forward
- or backwards, the distance to the closest point that has an `x` value
- between `-W` and `W` is used as the obstacle distance.
+ footprint is paramatized as having width `robot_width` either side of
+ base_link, and length `robot_front_length` forward of base_link and length
+ `robot_back_length` behind it.  This could be extended to be an abitrary
+ polygon.  When the robot is travelling forward or backwards, the distance
+ to the closest point that has an `x` value between `-robot_width` and
+ `robot_width` is used as the obstacle distance.
 
  In the case of rotation in place, the angle that the robot will rotate
  before hitting an obstacle is determined. This is done by converting
@@ -76,14 +77,21 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     line_pub = ros::Publisher(
                  nh.advertise<visualization_msgs::Marker>("/sonar", 1));
 
+    max_age = nh.param<float>("max_age", 1.0);
+    no_obstacle_dist = nh.param<float>("no_obstacle_dist", 10.0);
+
     // Footprint
-    W = nh.param<float>("footprint_w", 0.04);
-    F = nh.param<float>("footprint_f", 0.05);
-    B = nh.param<float>("footprint_r", 0.12);
+    robot_width = nh.param<float>("robot_width", 0.04);
+    robot_front_length = nh.param<float>("robot_front_length", 0.05);
+    robot_back_length = nh.param<float>("robot_back_length", 0.12);
+
+    robot_width_sq = robot_width * robot_width;
+    robot_front_length_sq = robot_front_length * robot_front_length;
+    robot_back_length_sq = robot_back_length * robot_back_length;
 
     // To test if obstacles will intersect when rotating
-    front_diag = W*W + F*F;
-    back_diag = W*W + B*B;
+    front_diag = robot_width*robot_width + robot_front_length*robot_front_length;
+    back_diag = robot_width*robot_width + robot_back_length*robot_back_length;
 
     // TODO: make into a single topic
     std::string topic_prefix = "sonar_";
@@ -204,64 +212,52 @@ void ObstacleDetector::get_points()
     points.clear();
     ros::Time now = ros::Time::now();
 
-    std::map<std::string,RangeSensor>::iterator it;
-    for (it = sensors.begin(); it != sensors.end(); it++) {
-        RangeSensor& sensor = it->second;
+    for (const auto& kv : sensors) {
+        const RangeSensor& sensor = kv.second;
 
         float age = (now - sensor.stamp).toSec();
-        if (age < 1.0) {
+        if (age < max_age) {
            points.push_back(sensor.left_vertex);
            points.push_back(sensor.right_vertex);
         }
     }
 }
 
-float ObstacleDetector::obstacle_dist_forward()
+float ObstacleDetector::obstacle_dist(bool forward)
 {
-    float min_dist = 10.0f;
+    float min_dist = no_obstacle_dist;
     ros::Time now = ros::Time::now();
 
     get_points();
-    for (int i=0; i<points.size(); i++) {
-        tf2::Vector3& p = points[i];
-        float x = p.x();
-        float y = p.y();
-        if (x > F && -W < y && y < W) {
-            if (x < min_dist) {
-                min_dist = x - F;
+    if (forward) {
+        for (const auto& p : points) {
+            float x = p.x();
+            float y = p.y();
+            if (x > robot_front_length && -robot_width < y && y < robot_width) {
+                if (x < min_dist) {
+                    min_dist = x - robot_front_length;
+                }
             }
         }
     }
-
-    ROS_INFO("min_dist %f", min_dist);
-    draw_line(tf2::Vector3(min_dist, -W, 0),
-              tf2::Vector3(min_dist, W, 0), 1, 0, 0, 1000);
-    return min_dist;
-}
-
-float ObstacleDetector::obstacle_dist_reverse()
-{
-    float min_dist = 10.0f;
-    ros::Time now = ros::Time::now();
-
-    get_points();
-    for (int i=0; i<points.size(); i++) {
-        tf2::Vector3& p = points[i];
-        float x = -p.x();
-        float y = p.y();
-        if (x > B && -W < y && y < W) {
-            if (x < min_dist) {
-                min_dist = x - B;
+    else {
+        for (const auto& p : points) {
+            float x = -p.x();
+            float y = p.y();
+            if (x > robot_back_length && -robot_width < y && y < robot_width) {
+                if (x < min_dist) {
+                    min_dist = x - robot_back_length;
+                }
             }
         }
     }
     ROS_INFO("min_dist %f", min_dist);
-    draw_line(tf2::Vector3(min_dist, -W, 0),
-              tf2::Vector3(min_dist, W, 0), 1, 0, 0, 1000);
+    draw_line(tf2::Vector3(min_dist, -robot_width, 0),
+              tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 1000);
     return min_dist;
 }
 
-float ObstacleDetector::degrees(float radians)
+float ObstacleDetector::degrees(float radians) const
 {
     return radians * 180.0 / M_PI;
 }
@@ -272,7 +268,7 @@ float ObstacleDetector::degrees(float radians)
  value
 */
 inline void ObstacleDetector::check_angle(float theta, float x, float y,
-                                          bool left, float& min_dist)
+                                          bool left, float& min_dist) const
 {
     float theta_int = theta - std::atan2(y, x);
     if (theta_int < -M_PI) {
@@ -299,55 +295,58 @@ float ObstacleDetector::obstacle_angle(bool left)
     //XXX for testing
     //points.push_back(tf2::Vector3(-0.0, -0.1, 0));
 
-    for (int i=0; i<points.size(); i++) {
-        tf2::Vector3& p = points[i];
+    for (const auto& p : points) {
         float x = p.x();
         float y = p.y();
         // initial orientation wrt base_link
         float theta = std::atan2(y, x);
         float r_squared = x*x + y*y;
         if (r_squared < back_diag) {
-           // left line segment: y = W, -B < x < F
-           // right line segment: y = -W, -B < x < F
-           if (W*W < r_squared) {
-               float xi = std::sqrt(r_squared - W*W);
-               if (-B < xi && xi < F) {
+           // left line segment:
+           //   y = robot_width, -robot_back_length < x < robot_front_length
+           // right line segment:
+           //   y = -robot_width, -robot_back_length < x < robot_front_length
+           if (robot_width_sq < r_squared) {
+               float xi = std::sqrt(r_squared - robot_width_sq);
+               if (-robot_back_length < xi && xi < robot_front_length) {
                    if (y > 0) {
-                       check_angle(theta, xi, W, left, min_angle);
+                       check_angle(theta, xi, robot_width, left, min_angle);
                    }
                    else {
-                       check_angle(theta, xi, -W, left, min_angle);
+                       check_angle(theta, xi, -robot_width, left, min_angle);
                    }
                }
-               if (-B < -xi && -xi < F) {
+               if (-robot_back_length < -xi && -xi < robot_front_length) {
                    if (y > 0) {
-                       check_angle(theta, -xi, W, left, min_angle);
+                       check_angle(theta, -xi, robot_width, left, min_angle);
                    }
                    else {
-                       check_angle(theta, -xi, -W, left, min_angle);
+                       check_angle(theta, -xi, -robot_width, left, min_angle);
                    }
                }
            }
 
-           // back line segment: x = -B, -W < y < W
-           if (x < 0 && B*B < r_squared) {
-               float yi = std::sqrt(r_squared - B*B);
-               if (-W < yi && yi < W) {
-                   check_angle(theta, -B, yi, left, min_angle);
+           // back line segment:
+           //   x = -robot_back_length, -robot_width < y < robot_width
+           if (x < 0 && robot_back_length_sq < r_squared) {
+               float yi = std::sqrt(r_squared - robot_back_length_sq);
+               if (-robot_width < yi && yi < robot_width) {
+                   check_angle(theta, -robot_back_length, yi, left, min_angle);
                }
-               if (-W < -yi && -yi < W) {
-                   check_angle(theta, -B, -yi, left, min_angle);
+               if (-robot_width < -yi && -yi < robot_width) {
+                   check_angle(theta, -robot_back_length, -yi, left, min_angle);
                }
            }
 
-           // front line segment: x = F, -W < y < W
-           if (x > 0 && r_squared < front_diag && F*F < r_squared) {
-               float yi = std::sqrt(r_squared - F*F);
-               if (-W < yi && yi < W) {
-                   check_angle(theta, F, yi, left, min_angle);
+           // front line segment:
+           //   x = robot_front_length, -robot_width < y < robot_width
+           if (x > 0 && r_squared < front_diag && robot_front_length_sq < r_squared) {
+               float yi = std::sqrt(r_squared - robot_front_length_sq);
+               if (-robot_width < yi && yi < robot_width) {
+                   check_angle(theta, robot_front_length, yi, left, min_angle);
                }
-               if (-W < -yi && -yi < W) {
-                   check_angle(theta, F, -yi, left, min_angle);
+               if (-robot_width < -yi && -yi < robot_width) {
+                   check_angle(theta, robot_front_length, -yi, left, min_angle);
                }
            }
         }
