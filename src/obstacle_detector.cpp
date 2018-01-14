@@ -297,7 +297,7 @@ float ObstacleDetector::obstacle_angle(bool left)
 
     get_points();
     //XXX for testing
-    //points.push_back(tf2::Vector3(-0.0, 0.1, 0));
+    //points.push_back(tf2::Vector3(-0.0, -0.1, 0));
 
     for (int i=0; i<points.size(); i++) {
         tf2::Vector3& p = points[i];
@@ -307,31 +307,42 @@ float ObstacleDetector::obstacle_angle(bool left)
         float theta = std::atan2(y, x);
         float r_squared = x*x + y*y;
         if (r_squared < back_diag) {
+           // left line segment: y = W, -B < x < F
+           // right line segment: y = -W, -B < x < F
+           if (W*W < r_squared) {
+               float xi = std::sqrt(r_squared - W*W);
+               if (-B < xi && xi < F) {
+                   if (y > 0) {
+                       check_angle(theta, xi, W, left, min_angle);
+                   }
+                   else {
+                       check_angle(theta, xi, -W, left, min_angle);
+                   }
+               }
+               if (-B < -xi && -xi < F) {
+                   if (y > 0) {
+                       check_angle(theta, -xi, W, left, min_angle);
+                   }
+                   else {
+                       check_angle(theta, -xi, -W, left, min_angle);
+                   }
+               }
+           }
 
-           // left side: y = W, -B < x < F
-           // right side: y = -W, -B < x < F
-           float xi = std::sqrt(r_squared - W*W);
-           if (-B < xi && xi < F) {
-               check_angle(theta, xi, W, left, min_angle);
-               check_angle(theta, xi, -W, left, min_angle);
-           }
-           if (-B < -xi && -xi < F) {
-               check_angle(theta, -xi, W, left, min_angle);
-               check_angle(theta, -xi, -W, left, min_angle);
-           }
-
-           // back side: x = -B, -W < y < W
-           float yi = std::sqrt(r_squared - B*B);
-           if (-W < yi && yi < W) {
-               check_angle(theta, -B, yi, left, min_angle);
-           }
-           if (-W < -yi && -yi < W) {
-               check_angle(theta, -B, -yi, left, min_angle);
-           }
-
-           // front side: x = F, -W < y < W
-           if (r_squared < front_diag) {
+           // back line segment: x = -B, -W < y < W
+           if (x < 0 && B*B < r_squared) {
                float yi = std::sqrt(r_squared - B*B);
+               if (-W < yi && yi < W) {
+                   check_angle(theta, -B, yi, left, min_angle);
+               }
+               if (-W < -yi && -yi < W) {
+                   check_angle(theta, -B, -yi, left, min_angle);
+               }
+           }
+
+           // front line segment: x = F, -W < y < W
+           if (x > 0 && r_squared < front_diag && F*F < r_squared) {
+               float yi = std::sqrt(r_squared - F*F);
                if (-W < yi && yi < W) {
                    check_angle(theta, F, yi, left, min_angle);
                }
