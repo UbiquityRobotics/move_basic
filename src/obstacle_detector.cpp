@@ -223,37 +223,62 @@ void ObstacleDetector::get_points()
     }
 }
 
+inline void ObstacleDetector::check_dist(float x, bool forward, float& min_dist) const
+{
+    if (forward && x > robot_front_length) {
+        if (x < min_dist) {
+            min_dist = x;
+        }
+    }
+    if (!forward && -x > robot_back_length ) {
+        if (-x < min_dist) {
+            min_dist = -x;
+        }
+    }
+}
+
 float ObstacleDetector::obstacle_dist(bool forward)
 {
     float min_dist = no_obstacle_dist;
     ros::Time now = ros::Time::now();
 
-    get_points();
-    if (forward) {
-        for (const auto& p : points) {
-            float x = p.x();
-            float y = p.y();
-            if (x > robot_front_length && -robot_width < y && y < robot_width) {
-                if (x < min_dist) {
-                    min_dist = x - robot_front_length;
-                }
+    for (const auto& kv : sensors) {
+        const RangeSensor& sensor = kv.second;
+        float x0 = sensor.left_vertex.x();
+        float y0 = sensor.left_vertex.y();
+        float x1 = sensor.right_vertex.x();
+        float y1 = sensor.right_vertex.y();
+        if ((y1 < -robot_width && robot_width < y0) || (y0 < -robot_width && robot_width < y1)) {
+            // linear interpolate to get closest point inside width
+            float x = 0;
+            if (x0 < x1) {
+                float a = (y0 - robot_width) / (y1 - y0);
+                x = x1 * a + x0 * (1 - a);
             }
+            else {
+                float a = (y0 + robot_width) / (y1 - y0);
+                x = x1 * a + x0 * (1 - a);
+            }
+            check_dist(x, forward, min_dist);
         }
-    }
-    else {
-        for (const auto& p : points) {
-            float x = -p.x();
-            float y = p.y();
-            if (x > robot_back_length && -robot_width < y && y < robot_width) {
-                if (x < min_dist) {
-                    min_dist = x - robot_back_length;
-                }
-            }
+        if (-robot_width < y0 && y0 < robot_width) {
+            check_dist(x0, forward, min_dist);
+        }
+        if (-robot_width < y1 && y1 < robot_width) {
+            check_dist(x1, forward, min_dist);
         }
     }
     ROS_INFO("min_dist %f", min_dist);
-    draw_line(tf2::Vector3(min_dist, -robot_width, 0),
-              tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 1000);
+    if (forward) {
+        draw_line(tf2::Vector3(min_dist, -robot_width, 0),
+                  tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 1000);
+        min_dist -= robot_front_length;
+    }
+    else {
+        draw_line(tf2::Vector3(-min_dist, -robot_width, 0),
+                  tf2::Vector3(-min_dist, robot_width, 0), 1, 0, 0, 2000);
+        min_dist -= robot_back_length;
+    }
     return min_dist;
 }
 

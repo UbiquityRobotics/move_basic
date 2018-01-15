@@ -61,6 +61,7 @@ protected:
     tf2_ros::TransformListener *listener;
 };
 
+/*
 TEST_F(ObstacleTests, noObstacles) {
     float forward_dist = obstacle_detector->obstacle_dist(true);
     float backward_dist = obstacle_detector->obstacle_dist(false);
@@ -84,6 +85,7 @@ TEST_F(ObstacleTests, backward) {
     ASSERT_FLOAT_EQ(forward_dist, 10.0);
     ASSERT_FLOAT_EQ(backward_dist, 0.88);
 }
+*/
 
 TEST_F(ObstacleTests, noObstaclesRot) {
     float left_angle = obstacle_detector->obstacle_angle(true);

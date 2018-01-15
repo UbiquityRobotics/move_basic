@@ -85,6 +85,7 @@ class ObstacleDetector
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                   float r, float g, float b, int id);
    void get_points();
+   void check_dist(float x, bool forward, float& min_dist) const;
    void check_angle(float theta, float x, float y,
                     bool left, float& min_dist) const;
 
