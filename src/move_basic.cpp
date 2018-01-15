@@ -159,7 +159,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 {
     ros::NodeHandle nh("~");
 
-    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.5);
+    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.05);
     nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
@@ -542,12 +542,12 @@ bool MoveBasic::rotate(double yaw)
         double angleRemaining = requestedYaw - currentYaw;
         normalizeAngle(angleRemaining);
 
-        float obstacle = obstacle_detector->obstacle_angle(angleRemaining > 0);
-        float remaining = std::min(std::abs(angleRemaining), obstacle);
+        double obstacle = obstacle_detector->obstacle_angle(angleRemaining > 0);
+        double remaining = std::min(std::abs(angleRemaining), obstacle);
         double speed = std::max(minAngularVelocity,
             std::min(maxAngularVelocity,
               std::sqrt(2.0 * angularAcceleration *
-                (remaining - angularTolerance)));
+                (remaining - angularTolerance))));
 
         double velocity = 0;
 
