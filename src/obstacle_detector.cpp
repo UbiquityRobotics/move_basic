@@ -115,6 +115,7 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
     //if (msg->range <= msg->min_range || msg->range >= msg->max_range) {
     //   return;
     //}
+    obstacle_mutex.lock();
 
     // create sensor object if this is a new sensor
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
@@ -174,6 +175,7 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
         draw_line(sensor.left_vertex, sensor.right_vertex, 0.5, 0.5, 0,
             sensor.id + 400);
     }
+    obstacle_mutex.unlock();
 }
 
 void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
@@ -207,10 +209,13 @@ void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
 
 void ObstacleDetector::get_points()
 {
+    ros::Time now = ros::Time::now();
+    
+    obstacle_mutex.lock();
+
     if (!have_test_points) {
         points.clear();
     }
-    ros::Time now = ros::Time::now();
 
     for (const auto& kv : sensors) {
         const RangeSensor& sensor = kv.second;
@@ -221,6 +226,7 @@ void ObstacleDetector::get_points()
            points.push_back(sensor.right_vertex);
         }
     }
+    obstacle_mutex.unlock();
 }
 
 inline void ObstacleDetector::check_dist(float x, bool forward, float& min_dist) const
@@ -242,32 +248,40 @@ float ObstacleDetector::obstacle_dist(bool forward)
     float min_dist = no_obstacle_dist;
     ros::Time now = ros::Time::now();
 
+    obstacle_mutex.lock();
+
     for (const auto& kv : sensors) {
         const RangeSensor& sensor = kv.second;
-        float x0 = sensor.left_vertex.x();
-        float y0 = sensor.left_vertex.y();
-        float x1 = sensor.right_vertex.x();
-        float y1 = sensor.right_vertex.y();
-        if ((y1 < -robot_width && robot_width < y0) || (y0 < -robot_width && robot_width < y1)) {
-            // linear interpolate to get closest point inside width
-            float x = 0;
-            if (x0 < x1) {
-                float a = (y0 - robot_width) / (y1 - y0);
-                x = x1 * a + x0 * (1 - a);
+        float age = (now - sensor.stamp).toSec();
+        if (age < max_age) {
+            float x0 = sensor.left_vertex.x();
+            float y0 = sensor.left_vertex.y();
+            float x1 = sensor.right_vertex.x();
+            float y1 = sensor.right_vertex.y();
+            if ((y1 < -robot_width && robot_width < y0) ||
+                (y0 < -robot_width && robot_width < y1)) {
+                // linear interpolate to get closest point inside width
+                float x = 0;
+                if (x0 < x1) {
+                    float a = (y0 - robot_width) / (y1 - y0);
+                    x = x1 * a + x0 * (1 - a);
+                }
+                else {
+                    float a = (y0 + robot_width) / (y1 - y0);
+                    x = x1 * a + x0 * (1 - a);
+                }
+                check_dist(x, forward, min_dist);
             }
-            else {
-                float a = (y0 + robot_width) / (y1 - y0);
-                x = x1 * a + x0 * (1 - a);
+            if (-robot_width < y0 && y0 < robot_width) {
+                check_dist(x0, forward, min_dist);
             }
-            check_dist(x, forward, min_dist);
-        }
-        if (-robot_width < y0 && y0 < robot_width) {
-            check_dist(x0, forward, min_dist);
-        }
-        if (-robot_width < y1 && y1 < robot_width) {
-            check_dist(x1, forward, min_dist);
+            if (-robot_width < y1 && y1 < robot_width) {
+                check_dist(x1, forward, min_dist);
+            }
         }
     }
+    obstacle_mutex.unlock();
+
     ROS_INFO("min_dist %f", min_dist);
     if (forward) {
         draw_line(tf2::Vector3(min_dist, -robot_width, 0),

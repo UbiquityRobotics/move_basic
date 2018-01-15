@@ -32,6 +32,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/buffer.h>
 #include <sensor_msgs/Range.h>
+#include <mutex>
 
 
 // a single sensor with current obstacles
@@ -81,6 +82,7 @@ class ObstacleDetector
    float no_obstacle_dist;
    std::vector<tf2::Vector3> points;
    bool have_test_points;
+   std::mutex obstacle_mutex;
 
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                   float r, float g, float b, int id);
