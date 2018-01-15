@@ -3,13 +3,13 @@
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met: 
+ * modification, are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer. 
+ *    this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright notice,
  *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution. 
+ *    and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -88,6 +88,7 @@ class MoveBasic {
     std::string mapFrame;
 
     double reverseWithoutTurningThreshold;
+    bool have_lidar;
 
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -158,7 +159,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 {
     ros::NodeHandle nh("~");
 
-    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.05);
+    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.5);
     nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
@@ -201,6 +202,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
       "/move_base/goal", 1);
 
+    have_lidar = false;
     obstacle_detector.reset(new ObstacleDetector(nh, &tfBuffer));
 
     ROS_INFO("Move Basic ready");
@@ -240,7 +242,8 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 
 // Called when a laser scan is received assumes laser scanner is
-// mounted at around base_link. Sets obstacleDetected
+// mounted at around base_link. Sets obstacleDist
+// XXX this will get incorporated into the ObstacleDetector class soon
 
 void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
@@ -249,6 +252,7 @@ void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
     float width_2 = robotWidth / 2.0;
     float rangeMin = msg->range_min;
     float minDist = msg->range_max;
+    have_lidar = true;
 
     for (int i=0; i<msg->ranges.size(); i++) {
         angle += increment;
@@ -322,7 +326,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
       To counter these issues, we plan in the map frame, and wait localizationLatency
       after each step, and execute in the odom frame.
     */
-         
+
     tf2::Transform goal;
     tf2::fromMsg(msg->target_pose.pose, goal);
     std::string frameId = msg->target_pose.header.frame_id;
@@ -384,7 +388,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
          return;
     }
     tf2::Vector3 linear = goalInBase.getOrigin();
-    bool reverseWithoutTurning = 
+    bool reverseWithoutTurning =
         (-reverseWithoutTurningThreshold < linear.x() && linear.x() < 0.0);
 
 
@@ -538,10 +542,12 @@ bool MoveBasic::rotate(double yaw)
         double angleRemaining = requestedYaw - currentYaw;
         normalizeAngle(angleRemaining);
 
+        float obstacle = obstacle_detector->obstacle_angle(angleRemaining > 0);
+        float remaining = std::min(std::abs(angleRemaining), obstacle);
         double speed = std::max(minAngularVelocity,
             std::min(maxAngularVelocity,
               std::sqrt(2.0 * angularAcceleration *
-                (std::abs(angleRemaining) - angularTolerance))));
+                (remaining - angularTolerance)));
 
         double velocity = 0;
 
@@ -606,6 +612,10 @@ bool MoveBasic::moveLinear(double requestedDistance)
 
         double distRemaining = std::abs(requestedDistance) - std::abs(distTravelled);
 
+        if (!have_lidar) {
+            obstacleDist = obstacle_detector->obstacle_dist(requestedDistance > 0);
+        }
+
         double velocity = std::max(minLinearVelocity,
             std::min(maxLinearVelocity, std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
@@ -650,7 +660,7 @@ bool MoveBasic::moveLinear(double requestedDistance)
             done = true;
             ROS_INFO("Done linear, error %f meters", distRemaining);
         }
-        if (requestedDistance < 0) { 
+        if (requestedDistance < 0) {
             velocity = -velocity;
         }
         sendCmd(0, velocity);

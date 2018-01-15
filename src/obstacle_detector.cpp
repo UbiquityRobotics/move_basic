@@ -76,15 +76,15 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     have_test_points = false;
 
     line_pub = ros::Publisher(
-                 nh.advertise<visualization_msgs::Marker>("/sonar", 1));
+                 nh.advertise<visualization_msgs::Marker>("/sonar", 10));
 
     max_age = nh.param<float>("max_age", 1.0);
     no_obstacle_dist = nh.param<float>("no_obstacle_dist", 10.0);
 
     // Footprint
-    robot_width = nh.param<float>("robot_width", 0.04);
-    robot_front_length = nh.param<float>("robot_front_length", 0.05);
-    robot_back_length = nh.param<float>("robot_back_length", 0.12);
+    robot_width = nh.param<float>("robot_width", 0.08);
+    robot_front_length = nh.param<float>("robot_front_length", 0.09);
+    robot_back_length = nh.param<float>("robot_back_length", 0.19);
 
     robot_width_sq = robot_width * robot_width;
     robot_front_length_sq = robot_front_length * robot_front_length;
@@ -112,9 +112,9 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
 
     // ignore min values
     // XXX do we want to do this?
-    if (msg->range <= msg->min_range || msg->range >= msg->max_range) {
-       return;
-    }
+    //if (msg->range <= msg->min_range || msg->range >= msg->max_range) {
+    //   return;
+    //}
 
     // create sensor object if this is a new sensor
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
@@ -316,6 +316,17 @@ float ObstacleDetector::obstacle_angle(bool left)
     ros::Time now = ros::Time::now();
 
     get_points();
+    draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
+              tf2::Vector3(-robot_back_length, robot_width, 0), 0, 0, 1, 10003);
+
+    draw_line(tf2::Vector3(robot_front_length, -robot_width, 0),
+              tf2::Vector3(-robot_back_length, -robot_width, 0), 0, 0, 1, 10004);
+
+    draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
+              tf2::Vector3(robot_front_length, -robot_width, 0), 0, 0, 1, 10005);
+
+    draw_line(tf2::Vector3(-robot_back_length, robot_width, 0),
+              tf2::Vector3(-robot_back_length, -robot_width, 0), 0, 0, 1, 10006);
 
     for (const auto& p : points) {
         float x = p.x();
@@ -331,20 +342,12 @@ float ObstacleDetector::obstacle_angle(bool left)
            if (robot_width_sq <= r_squared) {
                float xi = std::sqrt(r_squared - robot_width_sq);
                if (-robot_back_length <= xi && xi <= robot_front_length) {
-                   if (y > 0) {
-                       check_angle(theta, xi, robot_width, left, min_angle);
-                   }
-                   else {
-                       check_angle(theta, xi, -robot_width, left, min_angle);
-                   }
+                   check_angle(theta, xi, robot_width, left, min_angle);
+                   check_angle(theta, xi, -robot_width, left, min_angle);
                }
                if (-robot_back_length <= -xi && -xi <= robot_front_length) {
-                   if (y > 0) {
-                       check_angle(theta, -xi, robot_width, left, min_angle);
-                   }
-                   else {
-                       check_angle(theta, -xi, -robot_width, left, min_angle);
-                   }
+                   check_angle(theta, -xi, robot_width, left, min_angle);
+                   check_angle(theta, -xi, -robot_width, left, min_angle);
                }
            }
 
