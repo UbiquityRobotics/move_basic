@@ -25,9 +25,9 @@ catkin_package(INCLUDE_DIRS DEPENDS)
 
 add_definitions(-std=c++11)
 
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} include)
 
-add_executable(move_basic src/move_basic.cpp)
+add_executable(move_basic src/obstacle_detector.cpp src/move_basic.cpp)
 add_dependencies(move_basic ${catkin_EXPORTED_TARGETS})
 
 target_link_libraries(move_basic ${catkin_LIBRARIES})
@@ -45,9 +45,18 @@ install(TARGETS move_basic
 
 #install(DIRECTORY launch/
 #        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-#) 
+#)
 
 ###########
 ## Tests ##
 ###########
+
+if(CATKIN_ENABLE_TESTING)
+        find_package(rostest REQUIRED)
+
+        catkin_add_gtest(obstacle_test
+                src/obstacle_detector.cpp
+                test/test_obstacles.cpp)
+        target_link_libraries(obstacle_test ${catkin_LIBRARIES})
+endif()
 
