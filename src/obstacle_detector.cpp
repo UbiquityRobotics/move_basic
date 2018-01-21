@@ -76,7 +76,7 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     have_test_points = false;
 
     line_pub = ros::Publisher(
-                 nh.advertise<visualization_msgs::Marker>("/sonar", 10));
+                 nh.advertise<visualization_msgs::Marker>("/sonar_viz", 10));
 
     max_age = nh.param<float>("max_age", 1.0);
     no_obstacle_dist = nh.param<float>("no_obstacle_dist", 10.0);
@@ -94,27 +94,15 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     front_diag = robot_width*robot_width + robot_front_length*robot_front_length;
     back_diag = robot_width*robot_width + robot_back_length*robot_back_length;
 
-    // TODO: make into a single topic
-    std::string topic_prefix = "sonar_";
-
-    for (int i=0; i<16; i++) {
-        std::string topic = str(boost::format{"%1%%2%"} % topic_prefix % i);
-        ROS_INFO("Subscribing to %s", topic.c_str());
-        subscribers.push_back(nh.subscribe("/bus_server/sensor/" + topic, 1,
-            &ObstacleDetector::sensor_callback, this));
-    }
+    sonar_sub = nh.subscribe("/sonar/", 1,
+        &ObstacleDetector::sensor_callback, this);
 }
 
 void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
 {
     std::string frame = msg->header.frame_id;
-    ROS_INFO("Callback %s %f", frame.c_str(), msg->range);
+    ROS_DEBUG("Callback %s %f", frame.c_str(), msg->range);
 
-    // ignore min values
-    // XXX do we want to do this?
-    //if (msg->range <= msg->min_range || msg->range >= msg->max_range) {
-    //   return;
-    //}
     obstacle_mutex.lock();
 
     // create sensor object if this is a new sensor

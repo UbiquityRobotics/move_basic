@@ -64,7 +64,7 @@ public:
 class ObstacleDetector
 {
    std::map<std::string, RangeSensor> sensors;
-   std::vector<ros::Subscriber> subscribers;
+   ros::Subscriber sonar_sub;
    ros::Publisher line_pub;
    tf2_ros::Buffer *tf_buffer;
    int sensor_id;
