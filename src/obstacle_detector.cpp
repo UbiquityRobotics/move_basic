@@ -94,7 +94,7 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     front_diag = robot_width*robot_width + robot_front_length*robot_front_length;
     back_diag = robot_width*robot_width + robot_back_length*robot_back_length;
 
-    sonar_sub = nh.subscribe("/sonar", 1,
+    sonar_sub = nh.subscribe("/sonars", 1,
         &ObstacleDetector::sensor_callback, this);
 }
 
