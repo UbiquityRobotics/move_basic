@@ -2,6 +2,11 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+  * Add ObstacleDetector class to estimate distance to obstacles using range sensors during linear motion and rotation in-place.
+* Contributors: Jim Vaughan, Rohan Agrawal
+
 0.2.2 (2017-10-08)
 ------------------
 * Will reverse for small distances without rotating
