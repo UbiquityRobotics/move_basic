@@ -158,9 +158,9 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
     else {
         RangeSensor& sensor = sensors[frame];
         sensor.update(msg->range, msg->header.stamp);
-        draw_line(sensor.origin, sensor.left_vertex, 0, 0, 1, sensor.id + 200);
-        draw_line(sensor.origin, sensor.right_vertex, 0, 1, 0, sensor.id + 300);
-        draw_line(sensor.left_vertex, sensor.right_vertex, 0.5, 0.5, 0,
+        draw_line(sensor.origin, sensor.left_vertex, 0.5, 0.5, 0.5, sensor.id + 200);
+        draw_line(sensor.origin, sensor.right_vertex, 0.5, 0.5, 0.5, sensor.id + 300);
+        draw_line(sensor.left_vertex, sensor.right_vertex, 1, 1, 1,
             sensor.id + 400);
     }
     obstacle_mutex.unlock();
@@ -319,16 +319,16 @@ float ObstacleDetector::obstacle_angle(bool left)
 
     get_points();
     draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
-              tf2::Vector3(-robot_back_length, robot_width, 0), 0, 0, 1, 10003);
+              tf2::Vector3(-robot_back_length, robot_width, 0), 0.28, 0.5, 1, 10003);
 
     draw_line(tf2::Vector3(robot_front_length, -robot_width, 0),
-              tf2::Vector3(-robot_back_length, -robot_width, 0), 0, 0, 1, 10004);
+              tf2::Vector3(-robot_back_length, -robot_width, 0), 0.28, 0.5, 1, 10004);
 
     draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
-              tf2::Vector3(robot_front_length, -robot_width, 0), 0, 0, 1, 10005);
+              tf2::Vector3(robot_front_length, -robot_width, 0), 0.28, 0.5, 1, 10005);
 
     draw_line(tf2::Vector3(-robot_back_length, robot_width, 0),
-              tf2::Vector3(-robot_back_length, -robot_width, 0), 0, 0, 1, 10006);
+              tf2::Vector3(-robot_back_length, -robot_width, 0), 0.28, 0.5, 1, 10006);
 
     for (const auto& p : points) {
         float x = p.x();
