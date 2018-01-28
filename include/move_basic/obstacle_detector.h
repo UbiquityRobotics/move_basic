@@ -61,22 +61,22 @@ public:
     void update(float range, ros::Time stamp);
 };
 
-// Line in polar form
-class PolarLine
-{
-public:
-    float radius;
-    float theta;
-
-    PolarLine(float radius, float theta);
-};
-
 // Handle Range messages and computes distance to obstacles
 class ObstacleDetector
 {
+   // Line in polar form
+   class PolarLine
+   {
+   public:
+       float radius;
+       float theta;
+ 
+       PolarLine(float radius, float theta);
+   };
+
    std::map<std::string, RangeSensor> sensors;
    ros::Subscriber sonar_sub;
-   ros::Subscriber scan_sub;;
+   ros::Subscriber scan_sub;
    ros::Publisher line_pub;
    tf2_ros::Buffer *tf_buffer;
    int sensor_id;

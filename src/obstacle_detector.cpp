@@ -373,12 +373,12 @@ float ObstacleDetector::obstacle_dist(bool forward)
 
     if (forward) {
         draw_line(tf2::Vector3(min_dist, -robot_width, 0),
-                  tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 1000);
+                  tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 10000);
         min_dist -= robot_front_length;
     }
     else {
         draw_line(tf2::Vector3(-min_dist, -robot_width, 0),
-                  tf2::Vector3(-min_dist, robot_width, 0), 1, 0, 0, 2000);
+                  tf2::Vector3(-min_dist, robot_width, 0), 1, 0, 0, 10000);
         min_dist -= robot_back_length;
     }
     return min_dist;
@@ -556,7 +556,7 @@ void RangeSensor::update(float range, ros::Time stamp)
     right_vertex = origin + right_vec * range;
 }
 
-PolarLine::PolarLine(float radius, float theta)
+ObstacleDetector::PolarLine::PolarLine(float radius, float theta)
 {
     this->radius = radius;
     this->theta = theta;
