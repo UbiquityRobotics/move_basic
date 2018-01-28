@@ -205,11 +205,9 @@ void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg
             fromMsg(base_normal.vector, lidar_normal);
 
             have_lidar = true;
-            ROS_INFO("Lidar set up");
         }
         catch (tf2::TransformException &ex) {
-            ROS_WARN("XX %s", ex.what());
-            ROS_INFO("Lidar not set up");
+            ROS_WARN("%s", ex.what());
             return;
         }
     }
@@ -486,8 +484,15 @@ float ObstacleDetector::obstacle_angle(bool left)
     }
 
     // Draw rotated footprint to show limit of rotation
-    float sin_theta = std::sin(min_angle);
-    float cos_theta = std::cos(min_angle);
+    float rotation;
+    if (left) {
+        rotation = min_angle;
+    }
+    else {
+        rotation = -min_angle;
+    }
+    float sin_theta = std::sin(rotation);
+    float cos_theta = std::cos(rotation);
 
 
     if (std::abs(min_angle) < M_PI) {
