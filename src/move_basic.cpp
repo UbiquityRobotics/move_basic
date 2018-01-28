@@ -39,7 +39,6 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <nav_msgs/Path.h>
-#include <sensor_msgs/LaserScan.h>
 #include <visualization_msgs/Marker.h>
 
 #include <actionlib/server/simple_action_server.h>
@@ -54,7 +53,6 @@ typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
-    ros::Subscriber scanSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -90,7 +88,6 @@ class MoveBasic {
     double reverseWithoutTurningThreshold;
     bool have_lidar;
 
-    void scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
@@ -189,8 +186,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
     linePub = ros::Publisher(nh.advertise<visualization_msgs::Marker>("/obstacle", 1));
 
-    scanSub = nh.subscribe("/scan", 1, &MoveBasic::scanCallback, this);
-
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
@@ -238,53 +233,6 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     }
     out = tf * in;
     return true;
-}
-
-
-// Called when a laser scan is received assumes laser scanner is
-// mounted at around base_link. Sets obstacleDist
-// XXX this will get incorporated into the ObstacleDetector class soon
-
-void MoveBasic::scanCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
-{
-    float angle = msg->angle_min;
-    float increment = msg->angle_increment;
-    float width_2 = robotWidth / 2.0;
-    float rangeMin = msg->range_min;
-    float minDist = msg->range_max;
-    have_lidar = true;
-
-    for (int i=0; i<msg->ranges.size(); i++) {
-        angle += increment;
-
-        float r = msg->ranges[i];
-
-        // ignore bogus samples
-        if (std::isnan(r) || r < rangeMin) {
-            continue;
-        }
-
-        float y = r * sin(angle);
-
-        // ignore anything outside width of robot
-        if (std::abs(y) > width_2) {
-            continue;
-        }
-
-        float x = r * cos(angle);
-
-        // ignore anything behind center of lidar
-        if (x < 0) {
-            continue;
-        }
-
-        if (x < minDist) {
-            minDist = x;
-        }
-    }
-    obstacleDist = minDist - frontToLidar;
-
-    drawLine(minDist, -width_2, minDist, width_2);
 }
 
 
