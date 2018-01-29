@@ -116,45 +116,45 @@ void ObstacleDetector::range_callback(const sensor_msgs::Range::ConstPtr &msg)
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
     if (it == sensors.end()) {
         try {
-            geometry_msgs::TransformStamped tfs =
+            geometry_msgs::TransformStamped sensor_to_base_tf =
                 tf_buffer->lookupTransform("base_link", frame, ros::Time(0));
 
             tf2::Transform tf;
-            tf2::Vector3 S, A, B, C;
+            tf2::Vector3 origin, left_vector, right_vector;
 
             // sensor origin
-            geometry_msgs::PointStamped origin;
-            origin.header.frame_id = frame;
-            origin.point.x = 0;
-            origin.point.y = 0;
-            origin.point.z = 0;
+            geometry_msgs::PointStamped sensor_origin;
+            sensor_origin.point.x = 0;
+            sensor_origin.point.y = 0;
+            sensor_origin.point.z = 0;
             geometry_msgs::PointStamped base_origin;
-            tf2::doTransform(origin, base_origin, tfs);
-            fromMsg(base_origin.point, S);
-            ROS_INFO("origin %f %f %f", S.x(), S.y(), S.z());
+            tf2::doTransform(sensor_origin, base_origin, sensor_to_base_tf);
+            fromMsg(base_origin.point, origin);
+            ROS_INFO("origin %f %f %f", origin.x(), origin.y(), origin.z());
 
             // vectors at the edges of cone when cone height is 1m
             double theta = msg->field_of_view / 2.0;
             float x = std::cos(theta);
             float y = std::sin(theta);
 
-            geometry_msgs::Vector3Stamped left;
-            left.vector.x = x;
-            left.vector.y = -y;
-            left.vector.z = 0.0;
+            geometry_msgs::Vector3Stamped sensor_left;
+            sensor_left.vector.x = x;
+            sensor_left.vector.y = -y;
+            sensor_left.vector.z = 0.0;
             geometry_msgs::Vector3Stamped base_left;
-            tf2::doTransform(left, base_left, tfs);
-            fromMsg(base_left.vector, B);
+            tf2::doTransform(sensor_left, base_left, sensor_to_base_tf);
+            fromMsg(base_left.vector, left_vector);
 
-            geometry_msgs::Vector3Stamped right;
-            right.vector.x = x;
-            right.vector.y = y;
-            right.vector.z = 0.0;
+            geometry_msgs::Vector3Stamped sensor_right;
+            sensor_right.vector.x = x;
+            sensor_right.vector.y = y;
+            sensor_right.vector.z = 0.0;
             geometry_msgs::Vector3Stamped base_right;
-            tf2::doTransform(right, base_right, tfs);
-            fromMsg(base_right.vector, C);
+            tf2::doTransform(sensor_right, base_right, sensor_to_base_tf);
+            fromMsg(base_right.vector, right_vector);
 
-            RangeSensor sensor(sensor_id++, frame, S, B, C);
+            RangeSensor sensor(sensor_id++, frame, origin,
+                               left_vector, right_vector);
             sensors[frame] = sensor;
             sensor.update(msg->range, msg->header.stamp);
         }
@@ -163,7 +163,7 @@ void ObstacleDetector::range_callback(const sensor_msgs::Range::ConstPtr &msg)
         }
     }
     else {
-        RangeSensor& sensor = sensors[frame];
+        RangeSensor& sensor = it->second;
         sensor.update(msg->range, msg->header.stamp);
         draw_line(sensor.origin, sensor.left_vertex, 0.5, 0.5, 0.5, sensor.id + 200);
         draw_line(sensor.origin, sensor.right_vertex, 0.5, 0.5, 0.5, sensor.id + 300);
@@ -181,7 +181,7 @@ void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg
 
     if (!have_lidar) {
         try {
-            geometry_msgs::TransformStamped tfs =
+            geometry_msgs::TransformStamped laser_to_base_tf =
                 tf_buffer->lookupTransform("base_link", "laser", ros::Time(0));
 
             tf2::Transform tf;
@@ -192,7 +192,7 @@ void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg
             origin.point.y = 0;
             origin.point.z = 0;
             geometry_msgs::PointStamped base_origin;
-            tf2::doTransform(origin, base_origin, tfs);
+            tf2::doTransform(origin, base_origin, laser_to_base_tf);
             fromMsg(base_origin.point, lidar_origin);
 
             // normal vector
@@ -201,7 +201,7 @@ void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg
             normal.vector.y = 0.0;
             normal.vector.z = 0.0;
             geometry_msgs::Vector3Stamped base_normal;
-            tf2::doTransform(normal, base_normal, tfs);
+            tf2::doTransform(normal, base_normal, laser_to_base_tf);
             fromMsg(base_normal.vector, lidar_normal);
 
             have_lidar = true;
