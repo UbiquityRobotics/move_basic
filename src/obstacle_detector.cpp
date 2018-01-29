@@ -38,6 +38,10 @@
  and computing a pair of vectors corresponding to the sides of their
  cone.
 
+ `LaserScan` messages from lidar sensors are also processed. If such data is
+ received, the transform from `base_link` to `laser` is looked up to determine
+ the scanner's position.
+
  The distance to the closest object is calculated based upon the positions
  of the end points of the sensors' cones.  For this purpose, the robot
  footprint is paramatized as having width `robot_width` either side of
@@ -74,6 +78,7 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     this->tf_buffer = tf_buffer;
     sensor_id = 0;
     have_test_points = false;
+    have_lidar = false;
 
     line_pub = ros::Publisher(
                  nh.advertise<visualization_msgs::Marker>("/sonar_viz", 10));
@@ -95,10 +100,12 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     back_diag = robot_width*robot_width + robot_back_length*robot_back_length;
 
     sonar_sub = nh.subscribe("/sonars", 1,
-        &ObstacleDetector::sensor_callback, this);
+        &ObstacleDetector::range_callback, this);
+    scan_sub = nh.subscribe("/scan", 1,
+        &ObstacleDetector::scan_callback, this);
 }
 
-void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
+void ObstacleDetector::range_callback(const sensor_msgs::Range::ConstPtr &msg)
 {
     std::string frame = msg->header.frame_id;
     ROS_DEBUG("Callback %s %f", frame.c_str(), msg->range);
@@ -109,45 +116,45 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
     if (it == sensors.end()) {
         try {
-            geometry_msgs::TransformStamped tfs =
+            geometry_msgs::TransformStamped sensor_to_base_tf =
                 tf_buffer->lookupTransform("base_link", frame, ros::Time(0));
 
             tf2::Transform tf;
-            tf2::Vector3 S, A, B, C;
+            tf2::Vector3 origin, left_vector, right_vector;
 
             // sensor origin
-            geometry_msgs::PointStamped origin;
-            origin.header.frame_id = frame;
-            origin.point.x = 0;
-            origin.point.y = 0;
-            origin.point.z = 0;
+            geometry_msgs::PointStamped sensor_origin;
+            sensor_origin.point.x = 0;
+            sensor_origin.point.y = 0;
+            sensor_origin.point.z = 0;
             geometry_msgs::PointStamped base_origin;
-            tf2::doTransform(origin, base_origin, tfs);
-            fromMsg(base_origin.point, S);
-            ROS_INFO("origin %f %f %f", S.x(), S.y(), S.z());
+            tf2::doTransform(sensor_origin, base_origin, sensor_to_base_tf);
+            fromMsg(base_origin.point, origin);
+            ROS_INFO("origin %f %f %f", origin.x(), origin.y(), origin.z());
 
             // vectors at the edges of cone when cone height is 1m
             double theta = msg->field_of_view / 2.0;
             float x = std::cos(theta);
             float y = std::sin(theta);
 
-            geometry_msgs::Vector3Stamped left;
-            left.vector.x = x;
-            left.vector.y = -y;
-            left.vector.z = 0.0;
+            geometry_msgs::Vector3Stamped sensor_left;
+            sensor_left.vector.x = x;
+            sensor_left.vector.y = -y;
+            sensor_left.vector.z = 0.0;
             geometry_msgs::Vector3Stamped base_left;
-            tf2::doTransform(left, base_left, tfs);
-            fromMsg(base_left.vector, B);
+            tf2::doTransform(sensor_left, base_left, sensor_to_base_tf);
+            fromMsg(base_left.vector, left_vector);
 
-            geometry_msgs::Vector3Stamped right;
-            right.vector.x = x;
-            right.vector.y = y;
-            right.vector.z = 0.0;
+            geometry_msgs::Vector3Stamped sensor_right;
+            sensor_right.vector.x = x;
+            sensor_right.vector.y = y;
+            sensor_right.vector.z = 0.0;
             geometry_msgs::Vector3Stamped base_right;
-            tf2::doTransform(right, base_right, tfs);
-            fromMsg(base_right.vector, C);
+            tf2::doTransform(sensor_right, base_right, sensor_to_base_tf);
+            fromMsg(base_right.vector, right_vector);
 
-            RangeSensor sensor(sensor_id++, frame, S, B, C);
+            RangeSensor sensor(sensor_id++, frame, origin,
+                               left_vector, right_vector);
             sensors[frame] = sensor;
             sensor.update(msg->range, msg->header.stamp);
         }
@@ -156,15 +163,71 @@ void ObstacleDetector::sensor_callback(const sensor_msgs::Range::ConstPtr &msg)
         }
     }
     else {
-        RangeSensor& sensor = sensors[frame];
+        RangeSensor& sensor = it->second;
         sensor.update(msg->range, msg->header.stamp);
-        draw_line(sensor.origin, sensor.left_vertex, 0, 0, 1, sensor.id + 200);
-        draw_line(sensor.origin, sensor.right_vertex, 0, 1, 0, sensor.id + 300);
-        draw_line(sensor.left_vertex, sensor.right_vertex, 0.5, 0.5, 0,
+        draw_line(sensor.origin, sensor.left_vertex, 0.5, 0.5, 0.5, sensor.id + 200);
+        draw_line(sensor.origin, sensor.right_vertex, 0.5, 0.5, 0.5, sensor.id + 300);
+        draw_line(sensor.left_vertex, sensor.right_vertex, 1, 1, 1,
             sensor.id + 400);
     }
     obstacle_mutex.unlock();
 }
+
+void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
+{
+    float theta = msg->angle_min;
+    float increment = msg->angle_increment;
+    float range_min = msg->range_min;
+
+    if (!have_lidar) {
+        try {
+            geometry_msgs::TransformStamped laser_to_base_tf =
+                tf_buffer->lookupTransform("base_link", "laser", ros::Time(0));
+
+            tf2::Transform tf;
+
+            // lidar origin
+            geometry_msgs::PointStamped origin;
+            origin.point.x = 0;
+            origin.point.y = 0;
+            origin.point.z = 0;
+            geometry_msgs::PointStamped base_origin;
+            tf2::doTransform(origin, base_origin, laser_to_base_tf);
+            fromMsg(base_origin.point, lidar_origin);
+
+            // normal vector
+            geometry_msgs::Vector3Stamped normal;
+            normal.vector.x = 1.0;
+            normal.vector.y = 0.0;
+            normal.vector.z = 0.0;
+            geometry_msgs::Vector3Stamped base_normal;
+            tf2::doTransform(normal, base_normal, laser_to_base_tf);
+            fromMsg(base_normal.vector, lidar_normal);
+
+            have_lidar = true;
+        }
+        catch (tf2::TransformException &ex) {
+            ROS_WARN("%s", ex.what());
+            return;
+        }
+    }
+
+    obstacle_mutex.lock();
+    lidar_points.clear();
+
+    for (const auto& r : msg->ranges) {
+        theta += increment;
+
+        // ignore bogus samples
+        if (std::isnan(r) || r < range_min || r > no_obstacle_dist) {
+            continue;
+        }
+
+        lidar_points.push_back(PolarLine(r, theta));
+    }
+    obstacle_mutex.unlock();
+}
+
 
 void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                             float r, float g, float b, int id)
@@ -191,14 +254,23 @@ void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
     gp2.z = p2.z();
     line.points.push_back(gp1);
     line.points.push_back(gp2);
-
     line_pub.publish(line);
 }
 
+void ObstacleDetector::clear_line(int id)
+{
+    visualization_msgs::Marker line;
+    line.type = visualization_msgs::Marker::LINE_LIST;
+    line.action = visualization_msgs::Marker::DELETE;
+    line.id = id;
+    line_pub.publish(line);
+}
+
+// Get points from range sensor cones
 void ObstacleDetector::get_points()
 {
     ros::Time now = ros::Time::now();
-    
+
     obstacle_mutex.lock();
 
     if (!have_test_points) {
@@ -213,6 +285,25 @@ void ObstacleDetector::get_points()
            points.push_back(sensor.left_vertex);
            points.push_back(sensor.right_vertex);
         }
+    }
+    obstacle_mutex.unlock();
+}
+
+// Get points from lidar - convert from polar to cartesian coords
+void ObstacleDetector::get_lidar_points(std::vector<tf2::Vector3>& points)
+{
+    obstacle_mutex.lock();
+    for (const auto& p : lidar_points) {
+        float sin_theta = std::sin(p.theta);
+        float cos_theta = std::cos(p.theta);
+
+        float x = lidar_origin.x() + p.radius * (lidar_normal.x() * cos_theta -
+             lidar_normal.y() * sin_theta);
+
+        float y = lidar_origin.y() + p.radius * (lidar_normal.y() * cos_theta +
+             lidar_normal.x() * sin_theta);
+
+        points.push_back(tf2::Vector3(x, y, 0));
     }
     obstacle_mutex.unlock();
 }
@@ -270,15 +361,24 @@ float ObstacleDetector::obstacle_dist(bool forward)
     }
     obstacle_mutex.unlock();
 
-    ROS_INFO("min_dist %f", min_dist);
+    // check lidar points
+    std::vector<tf2::Vector3> pts;
+    get_lidar_points(pts);
+    for (const auto& p : pts) {
+       float y = p.y();
+       if (-robot_width < y && y < robot_width) {
+            check_dist(p.x(), forward, min_dist);
+        }
+    }
+
     if (forward) {
         draw_line(tf2::Vector3(min_dist, -robot_width, 0),
-                  tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 1000);
+                  tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 10000);
         min_dist -= robot_front_length;
     }
     else {
         draw_line(tf2::Vector3(-min_dist, -robot_width, 0),
-                  tf2::Vector3(-min_dist, robot_width, 0), 1, 0, 0, 2000);
+                  tf2::Vector3(-min_dist, robot_width, 0), 1, 0, 0, 10000);
         min_dist -= robot_back_length;
     }
     return min_dist;
@@ -318,17 +418,21 @@ float ObstacleDetector::obstacle_angle(bool left)
     ros::Time now = ros::Time::now();
 
     get_points();
-    draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
-              tf2::Vector3(-robot_back_length, robot_width, 0), 0, 0, 1, 10003);
+    get_lidar_points(points);
 
+    // draw footprint
+    draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
+              tf2::Vector3(-robot_back_length, robot_width, 0),
+              0.28, 0.5, 1, 10003);
     draw_line(tf2::Vector3(robot_front_length, -robot_width, 0),
-              tf2::Vector3(-robot_back_length, -robot_width, 0), 0, 0, 1, 10004);
-
+              tf2::Vector3(-robot_back_length, -robot_width, 0),
+              0.28, 0.5, 1, 10004);
     draw_line(tf2::Vector3(robot_front_length, robot_width, 0),
-              tf2::Vector3(robot_front_length, -robot_width, 0), 0, 0, 1, 10005);
-
+              tf2::Vector3(robot_front_length, -robot_width, 0),
+              0.28, 0.5, 1, 10005);
     draw_line(tf2::Vector3(-robot_back_length, robot_width, 0),
-              tf2::Vector3(-robot_back_length, -robot_width, 0), 0, 0, 1, 10006);
+              tf2::Vector3(-robot_back_length, -robot_width, 0),
+              0.28, 0.5, 1, 10006);
 
     for (const auto& p : points) {
         float x = p.x();
@@ -378,6 +482,44 @@ float ObstacleDetector::obstacle_angle(bool left)
            }
         }
     }
+
+    // Draw rotated footprint to show limit of rotation
+    float rotation;
+    if (left) {
+        rotation = min_angle;
+    }
+    else {
+        rotation = -min_angle;
+    }
+    float sin_theta = std::sin(rotation);
+    float cos_theta = std::cos(rotation);
+
+
+    if (std::abs(min_angle) < M_PI) {
+        float x_fl = robot_front_length * cos_theta - robot_width * sin_theta;
+        float y_fl = robot_front_length * sin_theta + robot_width * cos_theta;
+        float x_fr = robot_front_length * cos_theta + robot_width * sin_theta;
+        float y_fr = robot_front_length * sin_theta - robot_width * cos_theta;
+        float x_bl = -robot_back_length * cos_theta - robot_width * sin_theta;
+        float y_bl = -robot_back_length * sin_theta + robot_width * cos_theta;
+        float x_br = -robot_back_length * cos_theta + robot_width * sin_theta;
+        float y_br = -robot_back_length * sin_theta - robot_width * cos_theta;
+        draw_line(tf2::Vector3(x_fl, y_fl, 0), tf2::Vector3(x_bl, y_bl, 0),
+                  1, 0, 0, 10010);
+        draw_line(tf2::Vector3(x_bl, y_bl, 0), tf2::Vector3(x_br, y_br, 0),
+                  1, 0, 0, 10011);
+        draw_line(tf2::Vector3(x_br, y_br, 0), tf2::Vector3(x_fr, y_fr, 0),
+                  1, 0, 0, 10012);
+        draw_line(tf2::Vector3(x_fr, y_fr, 0), tf2::Vector3(x_fl, y_fl, 0),
+                  1, 0, 0, 10013);
+    }
+    else {
+        clear_line(10010);
+        clear_line(10011);
+        clear_line(10012);
+        clear_line(10013);
+    }
+
     ROS_INFO("min angle %f\n", degrees(min_angle));
     return min_angle;
 }
@@ -413,3 +555,10 @@ void RangeSensor::update(float range, ros::Time stamp)
     left_vertex = origin + left_vec * range;
     right_vertex = origin + right_vec * range;
 }
+
+ObstacleDetector::PolarLine::PolarLine(float radius, float theta)
+{
+    this->radius = radius;
+    this->theta = theta;
+}
+

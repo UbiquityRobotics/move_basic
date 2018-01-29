@@ -32,6 +32,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/buffer.h>
 #include <sensor_msgs/Range.h>
+#include <sensor_msgs/LaserScan.h>
+
 #include <mutex>
 
 
@@ -59,12 +61,22 @@ public:
     void update(float range, ros::Time stamp);
 };
 
-
 // Handle Range messages and computes distance to obstacles
 class ObstacleDetector
 {
+   // Line in polar form
+   class PolarLine
+   {
+   public:
+       float radius;
+       float theta;
+ 
+       PolarLine(float radius, float theta);
+   };
+
    std::map<std::string, RangeSensor> sensors;
    ros::Subscriber sonar_sub;
+   ros::Subscriber scan_sub;
    ros::Publisher line_pub;
    tf2_ros::Buffer *tf_buffer;
    int sensor_id;
@@ -84,9 +96,18 @@ class ObstacleDetector
    bool have_test_points;
    std::mutex obstacle_mutex;
 
+   bool have_lidar;
+   tf2::Vector3 lidar_origin;
+   tf2::Vector3 lidar_normal;
+   std::vector<PolarLine> lidar_points;
+
    void draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
                   float r, float g, float b, int id);
+   void clear_line(int id);
+
    void get_points();
+   void get_lidar_points(std::vector<tf2::Vector3>& points);
+
    void check_dist(float x, bool forward, float& min_dist) const;
    void check_angle(float theta, float x, float y,
                     bool left, float& min_dist) const;
@@ -95,7 +116,8 @@ class ObstacleDetector
 
 public:
    ObstacleDetector(ros::NodeHandle& nh, tf2_ros::Buffer *tf_buffer);
-   void sensor_callback(const sensor_msgs::Range::ConstPtr &msg);
+   void range_callback(const sensor_msgs::Range::ConstPtr &msg);
+   void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg);
 
    // return distance in meters to closest obstacle
    float obstacle_dist(bool forward);
