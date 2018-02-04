@@ -2,6 +2,12 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Publish forward obstacle distance (`#31 <https://github.com/UbiquityRobotics/move_basic/issues/31>`_)
+* Improve Lidar-based obstacle detection (`#30 <https://github.com/UbiquityRobotics/move_basic/issues/30>`_)
+* Contributors: Jim Vaughan
+
 0.3.0 (2018-01-21)
 ------------------
   * Add ObstacleDetector class to estimate distance to obstacles using range sensors during linear motion and rotation in-place.
