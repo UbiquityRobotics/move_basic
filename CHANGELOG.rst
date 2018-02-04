@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.1 (2018-02-04)
+------------------
 * Publish forward obstacle distance (`#31 <https://github.com/UbiquityRobotics/move_basic/issues/31>`_)
 * Improve Lidar-based obstacle detection (`#30 <https://github.com/UbiquityRobotics/move_basic/issues/30>`_)
 * Contributors: Jim Vaughan
