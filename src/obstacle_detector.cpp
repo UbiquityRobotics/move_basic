@@ -81,7 +81,7 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     have_lidar = false;
 
     line_pub = ros::Publisher(
-                 nh.advertise<visualization_msgs::Marker>("/sonar_viz", 10));
+                 nh.advertise<visualization_msgs::Marker>("/obstacle_viz", 10));
 
     max_age = nh.param<float>("max_age", 1.0);
     no_obstacle_dist = nh.param<float>("no_obstacle_dist", 10.0);
