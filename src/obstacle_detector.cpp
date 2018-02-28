@@ -520,7 +520,7 @@ float ObstacleDetector::obstacle_angle(bool left)
         clear_line(10013);
     }
 
-    ROS_INFO("min angle %f\n", degrees(min_angle));
+    ROS_DEBUG("min angle %f\n", degrees(min_angle));
     return min_angle;
 }
 
