@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.2 (2018-03-03)
+------------------
 * Don't rotate to go small distances
 * Reduce verbosity when rotating
 * Contributors: Jim Vaughan
