@@ -346,7 +346,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
 
         tf2::Vector3 offset = goalInBase.getOrigin();
-        if (offset.length() != 0.0) {
+        if (offset.length() > linearTolerance) {
             double requestedYaw = atan2(offset.y(), offset.x());
             if (reverseWithoutTurning) {
                 if (requestedYaw > 0.0) {
@@ -371,7 +371,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     double dist = linear.length();
     ROS_INFO("Requested distance %f", dist);
 
-    if (dist > linearTolerance)
+    if (std::abs(dist) > linearTolerance) {
         if (reverseWithoutTurning) {
             dist = - dist;
         }
@@ -379,6 +379,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             return;
         }
         sleep(localizationLatency);
+    }
 
     // Final rotation as specified in goal
     tf2::Transform finalPose;
