@@ -464,7 +464,7 @@ bool MoveBasic::rotate(double yaw)
         normalizeAngle(angleRemaining);
 
         double obstacle = obstacle_detector->obstacle_angle(angleRemaining > 0);
-        double remaining = std::min(std::abs(angleRemaining), obstacle);
+        double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
         double speed = std::max(minAngularVelocity,
             std::min(maxAngularVelocity,
               std::sqrt(2.0 * angularAcceleration *
