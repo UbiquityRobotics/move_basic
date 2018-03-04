@@ -4,7 +4,8 @@
 This package contains a node that performs very basic navigation.
 The path planning consists of rotating in place to face the goal and then
 driving straight toward it.  It is designed to provide the same interfaces as 
-[move_base](http://wiki.ros.org/move_base).
+[move_base](http://wiki.ros.org/move_base). If lidar or sonar sensors are 
+present, it will attemp to stop to avoid a collision with obstacles.
 
 ## Installing software
 
@@ -23,4 +24,4 @@ To run, give the following command:
 
 ## Node details
 
-Please refer to [move_basic](http://wiki.ros.org/move_basic) for node documentation.
+Please refer to [the move_basic wiki page](http://wiki.ros.org/move_basic) for node documentation.
