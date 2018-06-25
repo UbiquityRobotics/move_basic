@@ -39,8 +39,8 @@
  cone.
 
  `LaserScan` messages from lidar sensors are also processed. If such data is
- received, the transform from `base_link` to `laser` is looked up to determine
- the scanner's position.
+ received, the transform from `base_link` to the laser's frame is looked up
+ to determine the scanner's position.
 
  The distance to the closest object is calculated based upon the positions
  of the end points of the sensors' cones.  For this purpose, the robot
@@ -182,7 +182,7 @@ void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg
     if (!have_lidar) {
         try {
             geometry_msgs::TransformStamped laser_to_base_tf =
-                tf_buffer->lookupTransform("base_link", "laser", ros::Time(0));
+                tf_buffer->lookupTransform("base_link", msg->header.frame_id, ros::Time(0));
 
             tf2::Transform tf;
 
