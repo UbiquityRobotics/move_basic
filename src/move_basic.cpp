@@ -38,6 +38,7 @@
 
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
 
@@ -58,6 +59,7 @@ class MoveBasic {
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
     ros::Publisher obstacle_dist_pub;
+    ros::Publisher errorPub;
 
     std::unique_ptr<MoveBaseActionServer> actionServer;
     std::unique_ptr<ObstacleDetector> obstacle_detector;
@@ -74,6 +76,11 @@ class MoveBasic {
     double maxLinearVelocity;
     double linearAcceleration;
     double linearTolerance;
+
+    // PID parameters for controlling lateral error
+    double lateralKp;
+    double lateralKi;
+    double lateralKd;
 
     int rotationAttempts;
     double localizationLatency;
@@ -166,6 +173,10 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
+    nh.param<double>("lateral_kp", lateralKp, 0.1);
+    nh.param<double>("lateral_ki", lateralKi, 0.0);
+    nh.param<double>("lateral_kd", lateralKd, 0.0);
+
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
     nh.param<int>("rotation_attempts", rotationAttempts, 1);
@@ -184,6 +195,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     obstacle_dist_pub =
         ros::Publisher(nh.advertise<std_msgs::Float32>("/obstacle_distance", 1));
+    errorPub =
+        ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
@@ -532,6 +545,11 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
 
     double requestedDistance = (A - B).length();
 
+    // For lateral control
+    double lateralIntegral = 0.0;
+    double lateralPrevError = 0.0;
+    double lateralError = 0.0;
+
     while (!done && ros::ok()) {
         ros::spinOnce();
         r.sleep();
@@ -551,13 +569,22 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
         // Compute how much to turn
         double rotation = 0.0;
 
-        double kp = 0.1;
-        rotation = kp * remaining.y(); 
+	lateralPrevError = lateralError;
+	lateralError = remaining.y();
+	double lateralDiff = lateralError - lateralPrevError;
+	lateralIntegral += lateralError;
+
+        rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
+		   (lateralKd * lateralDiff);
+
         // Limit rotation
         if (rotation > 0.5) rotation = 0.5;
         if (rotation < -0.5) rotation = -0.5;
         //printf("%f %f %f\n", remaining.x(), remaining.y(), rotation);
-
+        geometry_msgs::Vector3 pid_debug;
+	pid_debug.x = remaining.x();
+	pid_debug.y = remaining.y();
+	pid_debug.z = rotation;
 
         // No need to calculate forward obstacle speed, since we already have it
         double obstacleDist = forward_obstacle_dist;
