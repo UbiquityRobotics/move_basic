@@ -560,7 +560,7 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
         r.sleep();
 
         tf2::Transform poseOdom;
-        if (!getTransform(baseFrame, odomFrame, poseOdom)) {
+        if (!getTransform(odomFrame, baseFrame, poseOdom)) {
              ROS_WARN("Cannot determine robot pose for linear");
              continue;
         }
