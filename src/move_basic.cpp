@@ -590,6 +590,7 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
 	pid_debug.x = remaining.x();
 	pid_debug.y = remaining.y();
 	pid_debug.z = rotation;
+	errorPub.publish(pid_debug);
 
         // No need to calculate forward obstacle speed, since we already have it
         double obstacleDist = forward_obstacle_dist;
