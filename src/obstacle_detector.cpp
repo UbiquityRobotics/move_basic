@@ -80,6 +80,8 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     have_test_points = false;
     have_lidar = false;
 
+    nh.param<std::string>("base_frame", baseFrame, "base_link");
+
     line_pub = ros::Publisher(
                  nh.advertise<visualization_msgs::Marker>("/obstacle_viz", 10));
 
@@ -117,7 +119,7 @@ void ObstacleDetector::range_callback(const sensor_msgs::Range::ConstPtr &msg)
     if (it == sensors.end()) {
         try {
             geometry_msgs::TransformStamped sensor_to_base_tf =
-                tf_buffer->lookupTransform("base_link", frame, ros::Time(0));
+                tf_buffer->lookupTransform(baseFrame, frame, ros::Time(0));
 
             tf2::Transform tf;
             tf2::Vector3 origin, left_vector, right_vector;
@@ -182,7 +184,7 @@ void ObstacleDetector::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg
     if (!have_lidar) {
         try {
             geometry_msgs::TransformStamped laser_to_base_tf =
-                tf_buffer->lookupTransform("base_link", msg->header.frame_id, ros::Time(0));
+                tf_buffer->lookupTransform(baseFrame, msg->header.frame_id, ros::Time(0));
 
             tf2::Transform tf;
 
@@ -235,7 +237,7 @@ void ObstacleDetector::draw_line(const tf2::Vector3 &p1, const tf2::Vector3 &p2,
     visualization_msgs::Marker line;
     line.type = visualization_msgs::Marker::LINE_LIST;
     line.action = visualization_msgs::Marker::MODIFY;
-    line.header.frame_id = "/base_link";
+    line.header.frame_id = baseFrame;
     line.color.r = r;
     line.color.g = g;
     line.color.b = b;

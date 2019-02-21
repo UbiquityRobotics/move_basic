@@ -90,7 +90,10 @@ class MoveBasic {
     double obstacleWaitLimit;
 
     float forward_obstacle_dist;
+    
     std::string mapFrame;
+    std::string odomFrame;
+    std::string baseFrame;
 
     double reverseWithoutTurningThreshold;
 
@@ -189,6 +192,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
                       reverseWithoutTurningThreshold, 0.5);
 
     nh.param<std::string>("map_frame", mapFrame, "map");
+    nh.param<std::string>("odom_frame", odomFrame, "odom");
+    nh.param<std::string>("base_frame", baseFrame, "base_link");
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
@@ -328,7 +333,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     path.poses.push_back(p0);
 
     tf2::Transform poseFrameId;
-    if (!getTransform("base_link", frameId, poseFrameId)) {
+    if (!getTransform(baseFrame, frameId, poseFrameId)) {
          abortGoal("Cannot determine robot pose");
          return;
     }
@@ -342,13 +347,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Transform currentOdomBase;
     // Should be at time of goal message
-    if (!getTransform("odom", "base_link", currentOdomBase)) {
+    if (!getTransform(odomFrame, baseFrame, currentOdomBase)) {
          ROS_WARN("Cannot determine robot pose");
          return;
     }
 
     tf2::Transform goalInOdom;
-    if (!transformPose(frameId, "odom", goal, goalInOdom)) {
+    if (!transformPose(frameId, odomFrame, goal, goalInOdom)) {
          ROS_WARN("Cannot determine robot pose for linear");
          return;
     }
@@ -362,7 +367,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // Initial rotation to face goal
     for (int i=0; i<rotationAttempts; i++) {
         tf2::Transform goalInBase;
-        if (!transformPose(frameId, "base_link", goal, goalInBase)) {
+        if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
             ROS_WARN("Cannot determine robot pose for rotation");
             return;
         }
@@ -404,7 +409,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     // Final rotation as specified in goal
     tf2::Transform finalPose;
-    if (!getTransform("base_link", goalFrame, finalPose)) {
+    if (!getTransform(baseFrame, goalFrame, finalPose)) {
          abortGoal("Cannot determine robot pose for final rotation");
          return;
     }
@@ -454,7 +459,7 @@ bool MoveBasic::rotate(double yaw)
     ROS_INFO("Requested rotation %f", rad2deg(yaw));
 
     tf2::Transform poseOdom;
-    if (!getTransform("base_link", "odom", poseOdom)) {
+    if (!getTransform(baseFrame, odomFrame, poseOdom)) {
          abortGoal("Cannot determine robot pose for rotation");
          return false;
     }
@@ -476,7 +481,7 @@ bool MoveBasic::rotate(double yaw)
 
         double x, y, currentYaw;
         tf2::Transform poseOdom;
-        if (!getTransform("base_link", "odom", poseOdom)) {
+        if (!getTransform(baseFrame, odomFrame, poseOdom)) {
             abortGoal("Cannot determine robot pose for rotation");
             return false;
         }
@@ -535,7 +540,7 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
     ros::Time obstacleTime;
 
     tf2::Transform poseOdomInitial;
-    if (!getTransform("base_link", "odom", poseOdomInitial)) {
+    if (!getTransform(baseFrame, odomFrame, poseOdomInitial)) {
          abortGoal("Cannot determine robot pose for linear");
          return false;
     }
@@ -555,9 +560,9 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
         r.sleep();
 
         tf2::Transform poseOdom;
-        if (!getTransform("odom", "base_link", poseOdom)) {
-            ROS_WARN("Cannot determine robot pose");
-            return false;
+        if (!getTransform(baseFrame, odomFrame, poseOdom)) {
+             ROS_WARN("Cannot determine robot pose for linear");
+             continue;
         }
 
         tf2::Transform goalInBase = poseOdom * goalInOdom;

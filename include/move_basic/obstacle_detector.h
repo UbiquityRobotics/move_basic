@@ -74,6 +74,8 @@ class ObstacleDetector
        PolarLine(float radius, float theta);
    };
 
+   std::string baseFrame;
+
    std::map<std::string, RangeSensor> sensors;
    ros::Subscriber sonar_sub;
    ros::Subscriber scan_sub;
