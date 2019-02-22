@@ -114,7 +114,7 @@ class MoveBasic {
 
     void run();
 
-    bool moveLinear(tf2::Transform goalInOdom);
+    bool moveLinear(const tf2::Transform& goalInOdom);
     bool rotate(double requestedYaw);
 };
 
@@ -533,7 +533,7 @@ bool MoveBasic::rotate(double yaw)
 
 // Move forward specified distance
 
-bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
+bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
 {
     bool done = false;
     ros::Rate r(50);
@@ -547,10 +547,8 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
          return false;
     }
 
-    tf2::Vector3 A = poseOdomInitial.getOrigin();
-    tf2::Vector3 B = goalInOdom.getOrigin();
-
-    double requestedDistance = (A - B).length();
+    double requestedDistance = (poseOdomInitial.getOrigin() -
+                                goalInOdom.getOrigin()).length();
 
     // For lateral control
     double lateralIntegral = 0.0;
