@@ -81,6 +81,7 @@ class MoveBasic {
     double lateralKp;
     double lateralKi;
     double lateralKd;
+    double lateralMaxRotation;
 
     int rotationAttempts;
     double localizationLatency;
@@ -178,7 +179,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     nh.param<double>("lateral_kp", lateralKp, 0.1);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 0.0);
+    nh.param<double>("lateral_kd", lateralKd, 50.0);
+    nh.param<double>("lateral_max_rotation", lateralMaxRotation, 0.5);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
@@ -571,26 +573,31 @@ bool MoveBasic::moveLinear(tf2::Transform goalInOdom)
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
-        // Compute how much to turn
+        // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
 
-	lateralPrevError = lateralError;
-	lateralError = remaining.y();
-	double lateralDiff = lateralError - lateralPrevError;
-	lateralIntegral += lateralError;
+        lateralPrevError = lateralError;
+        lateralError = remaining.y();
+        double lateralDiff = lateralError - lateralPrevError;
+        lateralIntegral += lateralError;
 
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
-		   (lateralKd * lateralDiff);
+                   (lateralKd * lateralDiff);
 
         // Limit rotation
-        if (rotation > 0.5) rotation = 0.5;
-        if (rotation < -0.5) rotation = -0.5;
-        //printf("%f %f %f\n", remaining.x(), remaining.y(), rotation);
+        if (rotation > lateralMaxRotation) {
+            rotation = lateralMaxRotation;
+        }
+        else if (rotation < -lateralMaxRotation) {
+            rotation = -lateralMaxRotation;
+        }
+
+	// Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
-	pid_debug.x = remaining.x();
-	pid_debug.y = remaining.y();
-	pid_debug.z = rotation;
-	errorPub.publish(pid_debug);
+        pid_debug.x = remaining.x();
+        pid_debug.y = remaining.y();
+        pid_debug.z = rotation;
+        errorPub.publish(pid_debug);
 
         // No need to calculate forward obstacle speed, since we already have it
         double obstacleDist = forward_obstacle_dist;
