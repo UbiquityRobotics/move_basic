@@ -582,19 +582,14 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
 
-        // Limit rotation
-        if (rotation > lateralMaxRotation) {
-            rotation = lateralMaxRotation;
-        }
-        else if (rotation < -lateralMaxRotation) {
-            rotation = -lateralMaxRotation;
-        }
+        // Clamp rotation
+        rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
+                                                          rotation));
 
-	// Publish messages for PID tuning
+        // Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
         pid_debug.x = remaining.x();
         pid_debug.y = remaining.y();
-        pid_debug.z = rotation;
         errorPub.publish(pid_debug);
 
         // No need to calculate forward obstacle speed, since we already have it
