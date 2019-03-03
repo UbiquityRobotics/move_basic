@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Ubiquity Robotics
+ * Copyright (c) 2017-9, Ubiquity Robotics
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -90,12 +90,17 @@ class MoveBasic {
     double frontToLidar;
     double obstacleWaitLimit;
 
-    float forward_obstacle_dist;
-    
     std::string mapFrame;
     std::string odomFrame;
     std::string baseFrame;
 
+    double minSideDist;
+    double maxLateralDev;
+    double sideTurnWeight;
+
+    float forwardObstacleDist;
+    float leftObstacleDist;
+    float rightObstacleDist;
     double reverseWithoutTurningThreshold;
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -177,10 +182,15 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
+    // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 0.1);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
     nh.param<double>("lateral_kd", lateralKd, 50.0);
     nh.param<double>("lateral_max_rotation", lateralMaxRotation, 0.5);
+
+    nh.param<double>("min_side_dist", minSideDist, 0.2);
+    nh.param<double>("max_lateral_deviation", maxLateralDev, 1.0);
+    nh.param<double>("side_turn_weight", sideTurnWeight, 3.0);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
@@ -201,7 +211,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
 
     obstacle_dist_pub =
-        ros::Publisher(nh.advertise<std_msgs::Float32>("/obstacle_distance", 1));
+        ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/obstacle_distance", 1));
     errorPub =
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
 
@@ -445,8 +455,13 @@ void MoveBasic::run()
 
     while (ros::ok()) {
         ros::spinOnce();
-        forward_obstacle_dist = obstacle_detector->obstacle_dist(true);
-        msg.data = forward_obstacle_dist;
+        forwardObstacleDist = obstacle_detector->obstacle_dist(true,
+                                                               leftObstacleDist,
+                                                               rightObstacleDist);
+        geometry_msgs::Vector3 msg;
+        msg.x = forwardObstacleDist;
+        msg.y = leftObstacleDist;
+        msg.z = rightObstacleDist;
         obstacle_dist_pub.publish(msg);
 
         r.sleep();
@@ -571,36 +586,60 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
+        // Check distances to left and right
+        char dir = ' ';
+
+        if (minSideDist > 0 && leftObstacleDist < minSideDist &&
+            rightObstacleDist >= minSideDist) {
+            lateralError = sideTurnWeight * -(minSideDist - leftObstacleDist);
+            dir = '>';
+        }
+        else if (minSideDist > 0 && rightObstacleDist < minSideDist &&
+                 leftObstacleDist >= minSideDist) {
+            lateralError = sideTurnWeight * (minSideDist - rightObstacleDist);
+            dir = '<';
+        }
+        else {
+            // Keep to planned path
+            lateralError = remaining.y();
+            dir = '|';
+        }
+
+        printf("%c %f %f %f -> %f\n", dir, leftObstacleDist, rightObstacleDist,
+               remaining.y(), lateralError);
+
+        if (remaining.y() >= maxLateralDev) {
+            abortGoal("Aborting since max deviation reached");
+            sendCmd(0, 0);
+            return false;
+        }
+
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
 
         lateralPrevError = lateralError;
-        lateralError = remaining.y();
         double lateralDiff = lateralError - lateralPrevError;
         lateralIntegral += lateralError;
 
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
 
-        // Limit rotation
-        if (rotation > lateralMaxRotation) {
-            rotation = lateralMaxRotation;
-        }
-        else if (rotation < -lateralMaxRotation) {
-            rotation = -lateralMaxRotation;
-        }
+        // Clamp rotation
+        rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
+                                                          rotation));
 
-	// Publish messages for PID tuning
+        // Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
         pid_debug.x = remaining.x();
         pid_debug.y = remaining.y();
-        pid_debug.z = rotation;
         errorPub.publish(pid_debug);
 
         // No need to calculate forward obstacle speed, since we already have it
-        double obstacleDist = forward_obstacle_dist;
+        double obstacleDist = forwardObstacleDist;
         if (requestedDistance < 0.0) {
-            obstacleDist = obstacle_detector->obstacle_dist(false);
+            obstacleDist = obstacle_detector->obstacle_dist(false,
+                                                            leftObstacleDist,
+                                                            rightObstacleDist);
         }
 
         double velocity = std::max(minLinearVelocity,
@@ -622,6 +661,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
                 ros::Duration waitTime = ros::Time::now() - obstacleTime;
                 if (waitTime.toSec() > obstacleWaitLimit) {
                     abortGoal("Aborting due to obstacle");
+                    sendCmd(0, 0);
                     return false;
                 }
             }
@@ -648,9 +688,11 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             ROS_INFO("Done linear, error %f, %f meters",
                      remaining.x(), remaining.y());
         }
+        /* This should not be necessary and causes weird behavior
         if (requestedDistance < 0) {
             velocity = -velocity;
         }
+        */
         sendCmd(rotation, velocity);
     }
     return done;

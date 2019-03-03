@@ -122,7 +122,7 @@ public:
    void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg);
 
    // return distance in meters to closest obstacle
-   float obstacle_dist(bool forward);
+   float obstacle_dist(bool forward, float &left_dist, float &right_dist);
 
    // return distance in radians to closest obstacle
    float obstacle_angle(bool left);

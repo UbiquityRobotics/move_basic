@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Ubiquity Robotics
+ * Copyright (c) 2018-9, Ubiquity Robotics
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -324,9 +324,12 @@ inline void ObstacleDetector::check_dist(float x, bool forward, float& min_dist)
     }
 }
 
-float ObstacleDetector::obstacle_dist(bool forward)
+float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float &min_dist_right)
 {
     float min_dist = no_obstacle_dist;
+    min_dist_left = no_obstacle_dist;
+    min_dist_right = no_obstacle_dist;
+
     ros::Time now = ros::Time::now();
 
     obstacle_mutex.lock();
@@ -368,10 +371,25 @@ float ObstacleDetector::obstacle_dist(bool forward)
     get_lidar_points(pts);
     for (const auto& p : pts) {
        float y = p.y();
+       float x = p.x();
        if (-robot_width < y && y < robot_width) {
-            check_dist(p.x(), forward, min_dist);
-        }
+          check_dist(x, forward, min_dist);
+       }
+       if (x > -robot_back_length && x < robot_front_length) {
+          if (y > 0 && y < min_dist_left) {
+	     min_dist_left = y;
+	  }
+	  else if (y < 0 && -y < min_dist_right) {
+             min_dist_right = -y;
+	  }
+       }
     }
+
+    draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
+              tf2::Vector3(-robot_back_length, min_dist_left, 0), 0, 1, 0, 20000);
+
+    draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
+              tf2::Vector3(-robot_back_length, -min_dist_right, 0), 0, 1, 0, 20001);
 
     if (forward) {
         draw_line(tf2::Vector3(min_dist, -robot_width, 0),
