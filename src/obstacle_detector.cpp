@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Ubiquity Robotics
+ * Copyright (c) 2018-9, Ubiquity Robotics
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -324,9 +324,12 @@ inline void ObstacleDetector::check_dist(float x, bool forward, float& min_dist)
     }
 }
 
-float ObstacleDetector::obstacle_dist(bool forward)
+float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float &min_dist_right)
 {
     float min_dist = no_obstacle_dist;
+    min_dist_left = no_obstacle_dist;
+    min_dist_right = no_obstacle_dist;
+
     ros::Time now = ros::Time::now();
 
     obstacle_mutex.lock();
@@ -339,25 +342,89 @@ float ObstacleDetector::obstacle_dist(bool forward)
             float y0 = sensor.left_vertex.y();
             float x1 = sensor.right_vertex.x();
             float y1 = sensor.right_vertex.y();
-            if ((y1 < -robot_width && robot_width < y0) ||
-                (y0 < -robot_width && robot_width < y1)) {
+            // Forward and rear limits
+            if (y0 < -robot_width && robot_width < y1) {
                 // linear interpolate to get closest point inside width
-                float x = 0;
-                if (x0 < x1) {
-                    float a = (y0 - robot_width) / (y1 - y0);
-                    x = x1 * a + x0 * (1 - a);
-                }
-                else {
-                    float a = (y0 + robot_width) / (y1 - y0);
-                    x = x1 * a + x0 * (1 - a);
-                }
-                check_dist(x, forward, min_dist);
+                float ylen = y1 - y0;
+                float a0 = (y0 - robot_width) / ylen;
+                float a1 = (y1 - robot_width - y0) / ylen;
+                check_dist(a0 * x0 + (1.0 - a0) * x1, forward, min_dist);
+                check_dist(a1 * x1 + (1.0 - a1) * x0, forward, min_dist);
             }
-            if (-robot_width < y0 && y0 < robot_width) {
-                check_dist(x0, forward, min_dist);
+            else if (y1 < -robot_width && robot_width < y0) {
+                // linear interpolate to get closest point inside width
+                float ylen = y0 - y1;
+                float a0 = (y0 - robot_width - y1) / ylen;
+                float a1 = (y1 - robot_width) / ylen;
+                check_dist(a0 * x0 + (1.0 - a0) * x1, forward, min_dist);
+                check_dist(a1 * x1 + (1.0 - a1) * x0, forward, min_dist);
             }
-            if (-robot_width < y1 && y1 < robot_width) {
-                check_dist(x1, forward, min_dist);
+            else {
+                if (-robot_width < y0 && y0 < robot_width) {
+                    check_dist(x0, forward, min_dist);
+                }
+                if (-robot_width < y1 && y1 < robot_width) {
+                    check_dist(x1, forward, min_dist);
+                }
+            }
+            // Sides
+            if (x0 < -robot_back_length && x1 > robot_front_length) {
+                // linear interpolate to get closest point in side
+                float xlen = x1 - x0;
+                float ab = (-x0 - robot_back_length) / xlen;
+                float af = (x1 - robot_front_length - x0) / xlen;
+                float yb = ab * y0 + (1.0 - ab) * y1;
+                float yf = af * y1 + (1.0 - af) * y0;
+                if (yb > 0 && yb < min_dist_left) {
+	            min_dist_left = yb;
+	        }
+	        if (yb < 0 && -yb < min_dist_right) {
+                    min_dist_right = -yb;
+                }
+                if (yf> 0 && yf < min_dist_left) {
+	            min_dist_left = yf;
+	        }
+	        if (yf < 0 && -yf < min_dist_right) {
+                    min_dist_right = -yf;
+                }
+            }
+            else if (x1 < -robot_back_length && x0 > robot_front_length) {
+                // linear interpolate to get closest point in side
+                float xlen = x0 - x1;
+                float ab = (-x1 - robot_back_length) / xlen;
+                float af = (x0 - robot_front_length - x1) / xlen;
+                float yb = ab * y1 + (1.0 - ab) * y0;
+                float yf = af * y0 + (1.0 - af) * y1;
+                if (yb > 0 && yb < min_dist_left) {
+	            min_dist_left = yb;
+	        }
+	        if (yb < 0 && -yb < min_dist_right) {
+                    min_dist_right = -yb;
+                }
+                if (yf> 0 && yf < min_dist_left) {
+	            min_dist_left = yf;
+	        }
+	        if (yf < 0 && -yf < min_dist_right) {
+                    min_dist_right = -yf;
+                }
+            }
+            else {
+                if (x0 > -robot_back_length && x0 < robot_front_length) {
+                    if (y0 > 0 && y0 < min_dist_left) {
+	                min_dist_left = y0;
+	            }
+	            if (y0 < 0 && -y0 < min_dist_right) {
+                        min_dist_right = -y0;
+                    }
+                }
+                if (x1 > -robot_back_length && x1 < robot_front_length) {
+                    if (y1> 0 && y1 < min_dist_left) {
+	                min_dist_left = y1;
+	            }
+	            if (y1 < 0 && -y1 < min_dist_right) {
+                        min_dist_right = -y1;
+                    }
+	        }
             }
         }
     }
@@ -368,11 +435,30 @@ float ObstacleDetector::obstacle_dist(bool forward)
     get_lidar_points(pts);
     for (const auto& p : pts) {
        float y = p.y();
+       float x = p.x();
+       // Forward and rear
        if (-robot_width < y && y < robot_width) {
-            check_dist(p.x(), forward, min_dist);
-        }
+          check_dist(x, forward, min_dist);
+       }
+       // Sides
+       if (x > -robot_back_length && x < robot_front_length) {
+          if (y > 0 && y < min_dist_left) {
+	     min_dist_left = y;
+	  }
+	  else if (y < 0 && -y < min_dist_right) {
+             min_dist_right = -y;
+	  }
+       }
     }
 
+    // Green lines at sides
+    draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
+              tf2::Vector3(-robot_back_length, min_dist_left, 0), 0, 1, 0, 20000);
+
+    draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
+              tf2::Vector3(-robot_back_length, -min_dist_right, 0), 0, 1, 0, 20001);
+
+    // Red line at front or back
     if (forward) {
         draw_line(tf2::Vector3(min_dist, -robot_width, 0),
                   tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 10000);
