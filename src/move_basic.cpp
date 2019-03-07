@@ -586,6 +586,11 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
+        // If a forward obstacle is approach, start turning, but limit the
+        // amount turned
+        // TOOD: how to calculate our heading relative to the goal?
+        
+
         // Check distances to left and right
         char dir = ' ';
 
