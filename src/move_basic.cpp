@@ -97,6 +97,7 @@ class MoveBasic {
     double minSideDist;
     double maxLateralDev;
     double sideTurnWeight;
+    double maxTurn;
 
     float forwardObstacleDist;
     float leftObstacleDist;
@@ -129,6 +130,14 @@ class MoveBasic {
 static double rad2deg(double rad)
 {
     return rad * 180.0 / M_PI;
+}
+
+
+// Degrees to radians
+
+static double deg2rad(double deg)
+{
+    return deg / 180.0 * M_PI;
 }
 
 // Get the sign of a number
@@ -188,9 +197,17 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("lateral_kd", lateralKd, 50.0);
     nh.param<double>("lateral_max_rotation", lateralMaxRotation, 0.5);
 
-    nh.param<double>("min_side_dist", minSideDist, 0.2);
-    nh.param<double>("max_lateral_deviation", maxLateralDev, 1.0);
+    // Minimum distance to maintain at each side
+    nh.param<double>("min_side_dist", minSideDist, 0.6);
+
+    // Maximum deviation from linear path before aborting
+    nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
+
+    // Weighting of turning to avoid side obstacles
     nh.param<double>("side_turn_weight", sideTurnWeight, 3.0);
+
+    // Maximum turn to avoid obstacles before aborting (zero means none)
+    nh.param<double>("max_turn", maxTurn, deg2rad(60));
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
@@ -583,23 +600,32 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         tf2::Transform goalInBase = poseOdom * goalInOdom;
         tf2::Vector3 remaining = goalInBase.getOrigin();
 
+        tf2::Transform initialBaseToCurrent = poseOdom * poseOdomInitial; 
+        double cx, cy, cyaw;
+        getPose(initialBaseToCurrent, cx, cy, cyaw);
+
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
-        // If a forward obstacle is approach, start turning, but limit the
-        // amount turned
-        // TOOD: how to calculate our heading relative to the goal?
-        
-
-        // Check distances to left and right
+        bool canTurn = std::abs(cyaw) <= maxTurn;
         char dir = ' ';
-
-        if (minSideDist > 0 && leftObstacleDist < minSideDist &&
+        if (canTurn && forwardObstacleDist < 1.0) { // TODO: param
+            if (leftObstacleDist > rightObstacleDist) {
+               lateralError = lateralMaxRotation;
+               dir = 'L';
+            }
+            else {
+               lateralError = -lateralMaxRotation;
+               dir = 'R';
+            }
+        }
+        // Check distances to left and right
+        else if (canTurn && minSideDist > 0 && leftObstacleDist < minSideDist &&
             rightObstacleDist >= minSideDist) {
             lateralError = sideTurnWeight * -(minSideDist - leftObstacleDist);
             dir = '>';
         }
-        else if (minSideDist > 0 && rightObstacleDist < minSideDist &&
+        else if (canTurn && minSideDist > 0 && rightObstacleDist < minSideDist &&
                  leftObstacleDist >= minSideDist) {
             lateralError = sideTurnWeight * (minSideDist - rightObstacleDist);
             dir = '<';
@@ -610,14 +636,17 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             dir = '|';
         }
 
-        printf("%c %f %f %f -> %f\n", dir, leftObstacleDist, rightObstacleDist,
-               remaining.y(), lateralError);
+        printf("Debug %c %f %f %f %f %f %f\n", dir, leftObstacleDist, rightObstacleDist,
+               remaining.x(), remaining.y(), lateralError, rad2deg(cyaw));
 
-        if (remaining.y() >= maxLateralDev) {
+/* TODO: put this back
+        if (remaining.y() >= maxLateralDev || (!canTurn && (leftObstacleDist < minSideDist ||
+            rightObstacleDist < minSideDist))) {
             abortGoal("Aborting since max deviation reached");
             sendCmd(0, 0);
             return false;
         }
+*/
 
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
@@ -629,7 +658,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
 
-        // Clamp rotation
+        // Clamp rotation - TODO: is this necessary now we limit total rotation?
         rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
                                                           rotation));
 
@@ -678,7 +707,6 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             // start off again smoothly
             requestedDistance = distRemaining;
             distTravelled = 0.0;
-            poseOdomInitial = poseOdom;
         }
 
         if (actionServer->isNewGoalAvailable()) {
@@ -693,11 +721,6 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             ROS_INFO("Done linear, error %f, %f meters",
                      remaining.x(), remaining.y());
         }
-        /* This should not be necessary and causes weird behavior
-        if (requestedDistance < 0) {
-            velocity = -velocity;
-        }
-        */
         sendCmd(rotation, velocity);
     }
     return done;
