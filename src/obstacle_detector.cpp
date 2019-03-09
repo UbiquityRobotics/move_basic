@@ -425,9 +425,35 @@ float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float 
                         min_dist_right = -y1;
                     }
 	        }
+	    }
+        }
+    }
+
+    // Forward side points
+    float flx = robot_front_length;
+    float fly = min_dist_left;
+    float frx = robot_front_length;
+    float fry = min_dist_right;
+    
+    for (const auto& kv : sensors) {
+        const RangeSensor& sensor = kv.second;
+        float age = (now - sensor.stamp).toSec();
+        if (age < max_age) {
+            float x = (sensor.left_vertex.x() + sensor.right_vertex.x()) / 2.0;
+            float y = (sensor.left_vertex.y() + sensor.right_vertex.y()) / 2.0;
+            if (x > robot_front_length && x < min_dist) {
+                if (y > 0 && y < fly && y < min_dist_left) {
+                   fly = y;
+                   flx = x;
+                }
+                if (y < 0 && y < fly && -y < min_dist_right) {
+                   fry = -y;
+                   frx = x;
+                }
             }
         }
     }
+
     obstacle_mutex.unlock();
 
     // check lidar points
@@ -454,14 +480,32 @@ float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float 
     // Green lines at sides
     draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
               tf2::Vector3(-robot_back_length, min_dist_left, 0), 0, 1, 0, 20000);
+    draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
+              tf2::Vector3(robot_front_length + 2, min_dist_left, 0), 0, 0.5, 0, 20001);
 
     draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
-              tf2::Vector3(-robot_back_length, -min_dist_right, 0), 0, 1, 0, 20001);
+              tf2::Vector3(-robot_back_length, -min_dist_right, 0), 0, 1, 0, 20002);
+
+    draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
+              tf2::Vector3(robot_front_length + 2, -min_dist_right, 0), 0, 0.5, 0, 20003);
+ 
+    // Blue
+    draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
+              tf2::Vector3(flx, fly, 0), 0, 0, 1, 30000);
+
+    draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
+              tf2::Vector3(frx, -fry, 0), 0, 0, 1, 30001);
 
     // Red line at front or back
     if (forward) {
         draw_line(tf2::Vector3(min_dist, -robot_width, 0),
                   tf2::Vector3(min_dist, robot_width, 0), 1, 0, 0, 10000);
+
+        draw_line(tf2::Vector3(min_dist, -robot_width - 2, 0),
+                  tf2::Vector3(min_dist, -robot_width, 0), 0.5, 0, 0, 10020);
+
+        draw_line(tf2::Vector3(min_dist, robot_width + 2, 0),
+                  tf2::Vector3(min_dist, robot_width, 0), 0.5, 0, 0, 10030);
         min_dist -= robot_front_length;
     }
     else {
