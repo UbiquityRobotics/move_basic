@@ -324,7 +324,11 @@ inline void ObstacleDetector::check_dist(float x, bool forward, float& min_dist)
     }
 }
 
-float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float &min_dist_right)
+float ObstacleDetector::obstacle_dist(bool forward,
+                                      float &min_dist_left,
+                                      float &min_dist_right,
+                                      tf2::Vector3 &fl,
+                                      tf2::Vector3 &fr)
 {
     float min_dist = no_obstacle_dist;
     min_dist_left = no_obstacle_dist;
@@ -430,10 +434,10 @@ float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float 
     }
 
     // Forward side points
-    float flx = robot_front_length;
-    float fly = min_dist_left;
-    float frx = robot_front_length;
-    float fry = min_dist_right;
+    fl.setX(robot_front_length);
+    fl.setY(min_dist_left);
+    fr.setX(robot_front_length);
+    fr.setY(min_dist_right);
     
     for (const auto& kv : sensors) {
         const RangeSensor& sensor = kv.second;
@@ -442,13 +446,13 @@ float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float 
             float x = (sensor.left_vertex.x() + sensor.right_vertex.x()) / 2.0;
             float y = (sensor.left_vertex.y() + sensor.right_vertex.y()) / 2.0;
             if (x > robot_front_length && x < min_dist) {
-                if (y > 0 && y < fly && y < min_dist_left) {
-                   fly = y;
-                   flx = x;
+                if (y > 0 && y < fl.y() && y < min_dist_left) {
+                   fl.setX(x);
+                   fl.setY(y);
                 }
-                if (y < 0 && y < fly && -y < min_dist_right) {
-                   fry = -y;
-                   frx = x;
+                if (y < 0 && y < fr.y() && -y < min_dist_right) {
+                   fr.setX(x);
+                   fr.setY(-y);
                 }
             }
         }
@@ -491,10 +495,10 @@ float ObstacleDetector::obstacle_dist(bool forward, float &min_dist_left, float 
  
     // Blue
     draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
-              tf2::Vector3(flx, fly, 0), 0, 0, 1, 30000);
+              tf2::Vector3(fl.x(), fl.y(), 0), 0, 0, 1, 30000);
 
     draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
-              tf2::Vector3(frx, -fry, 0), 0, 0, 1, 30001);
+              tf2::Vector3(fr.x(), -fr.y(), 0), 0, 0, 1, 30001);
 
     // Red line at front or back
     if (forward) {

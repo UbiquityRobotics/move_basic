@@ -102,6 +102,8 @@ class MoveBasic {
     float forwardObstacleDist;
     float leftObstacleDist;
     float rightObstacleDist;
+    tf2::Vector3 forwardLeft; 
+    tf2::Vector3 forwardRight; 
     double reverseWithoutTurningThreshold;
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -474,7 +476,9 @@ void MoveBasic::run()
         ros::spinOnce();
         forwardObstacleDist = obstacle_detector->obstacle_dist(true,
                                                                leftObstacleDist,
-                                                               rightObstacleDist);
+                                                               rightObstacleDist,
+                                                               forwardLeft,
+                                                               forwardRight);
         geometry_msgs::Vector3 msg;
         msg.x = forwardObstacleDist;
         msg.y = leftObstacleDist;
@@ -607,6 +611,19 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
+        /*
+            In order of priority, we need to look at
+            - Is the robot blocked in the forward direction, in which
+              case we need to turn
+            - Is there an upcoming side obstacle, in which case
+              we need to slow down and/or steer
+            In the abscense of those,
+            - Maintain side distance when appropriate
+            - Adjust heading so that cyaw is going towards zero
+            - Fine tune by steering to minimize cy
+         */
+
+
         bool canTurn = std::abs(cyaw) <= maxTurn;
         char dir = ' ';
         if (canTurn && forwardObstacleDist < 1.0) { // TODO: param
@@ -668,22 +685,24 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         pid_debug.y = remaining.y();
         errorPub.publish(pid_debug);
 
-        // No need to calculate forward obstacle speed, since we already have it
         double obstacleDist = forwardObstacleDist;
-        if (requestedDistance < 0.0) {
+        if (requestedDistance < 0.0) { // Reverse
             obstacleDist = obstacle_detector->obstacle_dist(false,
                                                             leftObstacleDist,
-                                                            rightObstacleDist);
+                                                            rightObstacleDist,
+                                                            forwardLeft,
+                                                            forwardRight);
         }
 
         double velocity = std::max(minLinearVelocity,
             std::min(maxLinearVelocity, std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
-              std::sqrt(2.0 * linearAcceleration * std::min(obstacleDist, distRemaining)))));
+              std::sqrt(linearAcceleration *
+                 std::min(obstacleDist, distRemaining)))));
 
         // Stop if there is an obstacle in the distance we would travel in
-        // 1 second
-        bool obstacleDetected = obstacleDist <= velocity * 1.0;
+        // 1.5 seconds
+        bool obstacleDetected = obstacleDist <= velocity * 1.5;
         if (obstacleDetected) {
             velocity = 0;
             if (!waitingForObstacle) {
