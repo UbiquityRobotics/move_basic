@@ -200,7 +200,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("lateral_max_rotation", lateralMaxRotation, 0.5);
 
     // Minimum distance to maintain at each side
-    nh.param<double>("min_side_dist", minSideDist, 0.6);
+    nh.param<double>("min_side_dist", minSideDist, 0.7);
 
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
@@ -474,6 +474,7 @@ void MoveBasic::run()
 
     while (ros::ok()) {
         ros::spinOnce();
+        obstacle_detector->min_side_dist = minSideDist;
         forwardObstacleDist = obstacle_detector->obstacle_dist(true,
                                                                leftObstacleDist,
                                                                rightObstacleDist,
@@ -623,9 +624,19 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             - Fine tune by steering to minimize cy
          */
 
-
+        double obstacleDist = forwardObstacleDist;
+ 
+/*
+        printf("fl %f %f fr %f %f\n", forwardLeft.x(), forwardLeft.y(),
+               forwardRight.x(), forwardRight.y());
+*/
+ 
+        // If there is a side obstacle in front of us, use this
+        // distance as the side distance.  Note that the forward
+        // obstacles are much less reliable than the side obstacles.
         bool canTurn = std::abs(cyaw) <= maxTurn;
         char dir = ' ';
+/*
         if (canTurn && forwardObstacleDist < 1.0) { // TODO: param
             if (leftObstacleDist > rightObstacleDist) {
                lateralError = lateralMaxRotation;
@@ -636,8 +647,22 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
                dir = 'R';
             }
         }
+*/
         // Check distances to left and right
-        else if (canTurn && minSideDist > 0 && leftObstacleDist < minSideDist &&
+        //printf("L %f %f %f\n", leftObstacleDist, forwardLeft.y(), minSideDist);
+        // Check encroachment vectors for a side obstacle in the future
+        if (forwardLeft.y() < minSideDist &&
+            leftObstacleDist > minSideDist) {
+            printf("Left encroachment\n");
+            leftObstacleDist = forwardLeft.y();
+        }
+        if (forwardRight.y() < minSideDist &&
+            rightObstacleDist > minSideDist) {
+            printf("Right encroachment\n");
+            rightObstacleDist = forwardRight.y();
+        }
+
+        if (canTurn && minSideDist > 0 && leftObstacleDist < minSideDist &&
             rightObstacleDist >= minSideDist) {
             lateralError = sideTurnWeight * -(minSideDist - leftObstacleDist);
             dir = '>';
@@ -649,8 +674,17 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         }
         else {
             // Keep to planned path
-            lateralError = remaining.y();
-            dir = '|';
+            // TODO: if cyaw is large, we need to look at this instead
+            // of remaining.y().  Remaining.y() is not useful in the
+            // case that the path is away from the goal
+            if (true || std::abs(remaining.y()) < 2.0) {
+                lateralError = remaining.y();
+                dir = '|';
+            }
+            else {
+                lateralError = cyaw / 3.0;
+                dir = 'A';
+            }
         }
 
         printf("Debug %c %f %f %f %f %f %f\n", dir, leftObstacleDist, rightObstacleDist,
@@ -685,7 +719,6 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         pid_debug.y = remaining.y();
         errorPub.publish(pid_debug);
 
-        double obstacleDist = forwardObstacleDist;
         if (requestedDistance < 0.0) { // Reverse
             obstacleDist = obstacle_detector->obstacle_dist(false,
                                                             leftObstacleDist,
@@ -734,7 +767,8 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             velocity = 0;
         }
 
-        if (std::abs(distTravelled) > std::abs(requestedDistance) - linearTolerance) {
+        printf("remaining %f\n", remaining.length());
+        if (remaining.length() < linearTolerance) {
             velocity = 0;
             done = true;
             ROS_INFO("Done linear, error %f, %f meters",

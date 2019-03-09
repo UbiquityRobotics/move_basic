@@ -97,6 +97,8 @@ ObstacleDetector::ObstacleDetector(ros::NodeHandle& nh,
     robot_front_length_sq = robot_front_length * robot_front_length;
     robot_back_length_sq = robot_back_length * robot_back_length;
 
+    //min_side_dist = nh.param<double>("min_side_dist", min_side_dist, 0.7);
+
     // To test if obstacles will intersect when rotating
     front_diag = robot_width*robot_width + robot_front_length*robot_front_length;
     back_diag = robot_width*robot_width + robot_back_length*robot_back_length;
@@ -499,6 +501,13 @@ float ObstacleDetector::obstacle_dist(bool forward,
 
     draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
               tf2::Vector3(fr.x(), -fr.y(), 0), 0, 0, 1, 30001);
+
+    // Min side dist
+    draw_line(tf2::Vector3(robot_front_length, -min_side_dist, 0),
+              tf2::Vector3(robot_front_length + 2, -min_side_dist, 0), 0.5, 0.5, 0, 40001);
+
+    draw_line(tf2::Vector3(robot_front_length, min_side_dist, 0),
+              tf2::Vector3(robot_front_length + 2, min_side_dist, 0), 0.5, 0.5, 0, 40002);
 
     // Red line at front or back
     if (forward) {
