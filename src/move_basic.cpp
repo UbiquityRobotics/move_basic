@@ -637,6 +637,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         // obstacles are much less reliable than the side obstacles.
         bool canTurn = false;
         char dir = ' ';
+        double velMult = 1.0;
 /*
         Future enhancement: turn to avoid a forward obstacle
 
@@ -658,10 +659,12 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         if (forwardLeft.y() < minSideDist &&
             leftObstacleDist > minSideDist) {
             leftObstacleDist = forwardLeft.y();
+            velMult = 0.5;
         }
         if (forwardRight.y() < minSideDist &&
             rightObstacleDist > minSideDist) {
             rightObstacleDist = forwardRight.y();
+            velMult = 0.5;
         }
 
         if (minSideDist > 0 && leftObstacleDist < minSideDist &&
@@ -785,7 +788,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             ROS_INFO("Done linear, error %f, %f meters",
                      remaining.x(), remaining.y());
         }
-        sendCmd(rotation, velocity);
+        sendCmd(rotation, velMult * velocity);
     }
     return done;
 }
