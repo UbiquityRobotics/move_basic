@@ -196,14 +196,12 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
     // Parameters for turn PID
-    nh.param<double>("lateral_kp", lateralKp, 0.1);
+    nh.param<double>("lateral_kp", lateralKp, 1.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
     nh.param<double>("lateral_kd", lateralKd, 50.0);
-    nh.param<double>("lateral_max_rotation", lateralMaxRotation, 0.5);
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.7);
-    nh.param<double>("max_side_dist", maxSideDist, 0.8);
 
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
@@ -213,9 +211,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_turn_weight", sideRecoverWeight, 3.0);
-
-    // Maximum turn to avoid obstacles before aborting (zero means none)
-    nh.param<double>("max_turn", maxTurn, deg2rad(60));
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
