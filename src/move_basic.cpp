@@ -200,9 +200,11 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("lateral_ki", lateralKi, 0.0);
     nh.param<double>("lateral_kd", lateralKd, 50.0);
 
+/*
     lateralKp /= 10.0;
     lateralKi /= 10.0;
     lateralKd /= 10.0;
+*/
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.7);
