@@ -204,9 +204,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
     // Parameters for turn PID
-    nh.param<double>("lateral_kp", lateralKp, 0.5);
+    nh.param<double>("lateral_kp", lateralKp, 1.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 0.0);
+    nh.param<double>("lateral_kd", lateralKd, 50.0);
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.2);
@@ -217,6 +217,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     // Limits on turning to avoid obstacles
     nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
 
+    nh.param<double>("max_turn", maxTurn, deg2rad(60));
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
 
@@ -611,6 +612,9 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
 
     double midSideDist = (minSideDist + maxSideDist) / 2.0;
 
+    double turnInInitialYaw = 0;
+    bool turningIn = false;
+
     //printf("left %f right %f min %f max %f\n", leftObstacleDist, rightObstacleDist, minSideDist, maxSideDist);
     State prevState = GOING_STRAIGHT;
     if (minSideDist < leftObstacleDist && leftObstacleDist < maxSideDist) {
@@ -674,8 +678,8 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         // If there is a side obstacle in front of us, use this
         // distance as the side distance.  Note that the forward
         // obstacles are much less reliable than the side obstacles.
-        bool canTurn = false;
-        char dir = ' ';
+        bool canTurn = maxTurn == 0 || std::abs(cyaw) <= maxTurn;
+        char *dir = (char *)"";
         double velMult = 1.0;
 /*
         Future enhancement: turn to avoid a forward obstacle
@@ -692,22 +696,20 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             }
         }
 */
-/*
         // Check encroachment vectors for a side obstacle in the future
         // Only pay attention to them if they are more restrictive than
-        // the current side obstacles.
-        if (forwardLeft.y() < minSideDist &&
-            leftObstacleDist > minSideDist) {
+        // the current side obstacles.  Since it's not clear what they mean,
+        // we limit the linear speed.
+        if (forwardLeft.y() < leftObstacleDist && leftObstacleDist > minSideDist && leftObstacleDist < maxSideDist) {
             leftObstacleDist = forwardLeft.y();
             velMult = 0.5;
         }
-        if (forwardRight.y() < minSideDist &&
-            rightObstacleDist > minSideDist) {
+        if (forwardRight.y() < rightObstacleDist && rightObstacleDist > minSideDist && rightObstacleDist < maxSideDist) {
             rightObstacleDist = forwardRight.y();
             velMult = 0.5;
         }
-*/
 
+        // Avoiding turns away from the side object to increase the distance
         if (minSideDist > 0 && leftObstacleDist < minSideDist &&
             rightObstacleDist >= minSideDist) {
             lateralError = sideTurnWeight * (minSideDist - leftObstacleDist);
@@ -716,7 +718,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             }
             currState = AVOIDING_LEFT;
             printf("state = AVOIDING_LEFT\n");
-            dir = '>';
+            dir = (char *)">";
         }
         else if (minSideDist > 0 && rightObstacleDist < minSideDist &&
                  leftObstacleDist >= minSideDist) {
@@ -726,61 +728,78 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             }
             currState = AVOIDING_RIGHT;
             printf("state = AVOIDING_RIGHT\n");
-            dir = '<';
+            dir = (char *)"<";
         }
-/*
-        TODO: future enhancement: if a side obstacle is nearby, keep
-        a constant distance from it.
-        else if (maxSideDist > 0 && leftObstacleDist > minSideDist &&
-                 leftObstacleDist < maxSideDist) {
-            // Target mean of minSideDist and maxSideDist
-            lateralError = sideTurnWeight * (leftObstacleDist - (minSideDist + maxSideDist) / 2.0);
-            printf("Following: left %f err %f\n", leftObstacleDist, lateralError);
-            dir = ' ';
-        }
-*/
         else {
-            if (prevState == FOLLOWING_LEFT && leftObstacleDist < 9) {
-                lateralError = 0.5 * -(midSideDist - leftObstacleDist);
-                //printf("state = returning to FOLLOWING_LEFT\n");
-                printf("left %f mid %f err %f\n", leftObstacleDist, midSideDist, lateralError);
-                dir = 'F';
+            if (prevState == FOLLOWING_LEFT && leftObstacleDist < 9 && maxSideDist > 0) {
+                lateralError = 1.0 * -(midSideDist - leftObstacleDist);
+                if (leftObstacleDist > midSideDist) {
+                    // Be cautious when turning towards a side object,
+                    // Since at an angle it will appear further away.
+                    // This would be easier with more sonar sensors.
+                    /*
+                    if (!canTurn) {
+                        lateralError = 0;
+                    }
+                    */
+                    //lateralError *= 0.5;
+                    dir = (char *)"F-";
+                }
+                else {
+                    dir = (char *)"F+";
+                }
+                //printf("left %f mid %f err %f\n", leftObstacleDist, midSideDist, lateralError);
             }
-            else if (prevState == FOLLOWING_RIGHT && rightObstacleDist < 9) {
-                lateralError = 2.0 * (midSideDist - rightObstacleDist);
+            else if (prevState == FOLLOWING_RIGHT && rightObstacleDist < 9 && maxSideDist > 0) {
+                lateralError = 1.0 * (midSideDist - rightObstacleDist);
+                if (rightObstacleDist > midSideDist) {
+                    // Be cautious when turning towards a side object,
+                    // Since at an angle it will appear further away.
+                    // This would be easier with more sonar sensors.
+                    //lateralError *= 0.5;
+                    /*
+                    if (!canTurn) {
+                        lateralError = 0;
+                    }
+                    */
+                    dir = (char *)"f-";
+                }
+                else {
+                    turningIn = false;
+                    dir = (char *)"f+";
+                }
                 //printf("state = returning to FOLLOWING_RIGHT\n");
-                dir = 'f';
             }
             else {
                  lateralError = sideRecoverWeight * remaining.y();
                  if (prevState != GOING_STRAIGHT) {
                      printf("state = returning to GOING_STRAIGHT\n");
-                     prevState = GOING_STRAIGHT;
+                     //prevState = GOING_STRAIGHT;
                  }
-                 dir = '|';
+                 dir = (char *)"|";
             }
-/*
+            /*
             Future enhancement: use cyaw to figure out how to get
             back on track, since the lateral error is misleading,
             if a large change in direction has taken place.
+            Note that cyaw is misleading if a large distance is
+            being travelled.
             }
             else {
                 lateralError = cyaw / 3.0;
                 dir = 'A';
             }
-*/
+            */
         }
 
-        printf("Debug %c %f %f %f %f %f %f\n", dir, leftObstacleDist, rightObstacleDist,
+        printf("Debug %s %f %f %f %f %f %f\n", dir, leftObstacleDist, rightObstacleDist,
                remaining.x(), remaining.y(), lateralError, rad2deg(cyaw));
 
-/*
-        if (std::abs(remaining.y()) >= maxLateralDev) {
+        if (!canTurn || std::abs(remaining.y()) >= maxLateralDev) {
             abortGoal("Aborting since max deviation reached");
             sendCmd(0, 0);
             return false;
         }
-*/
 
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
@@ -866,7 +885,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             ROS_INFO("Done linear, error %f, %f meters",
                      remaining.x(), remaining.y());
         }
-        sendCmd(rotation, velocity);
+        sendCmd(rotation, velMult * velocity);
     }
     return done;
 }

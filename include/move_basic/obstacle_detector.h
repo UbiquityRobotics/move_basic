@@ -133,6 +133,7 @@ public:
 
    //TODO: refactor
    double min_side_dist;
+   double max_side_dist;
 
    void clear_test_points();
 };
