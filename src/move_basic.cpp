@@ -207,7 +207,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 */
 
     // Minimum distance to maintain at each side
-    nh.param<double>("min_side_dist", minSideDist, 0.7);
+    nh.param<double>("min_side_dist", minSideDist, 0.2);
 
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
