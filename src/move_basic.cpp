@@ -222,10 +222,10 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(30.0));
 
     // Maximum angular velocity during linear portion
-    nh.param<double>("max_lateral_rotation", lateralMaxRotation, deg2rad(0.5));
+    nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
 
     // Weighting of turning to avoid side obstacles
-    nh.param<double>("side_turn_weight", sideTurnWeight, 100.0);
+    nh.param<double>("side_turn_weight", sideTurnWeight, 1.0);
 
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
@@ -657,11 +657,13 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
             // Check encroachment vectors for a side obstacle in the future
             // Only pay attention to them if they are more restrictive than
             // the current side obstacles.
+/*
             if (forwardLeft.y() < minSideDist &&
                 leftObstacleDist > minSideDist) {
                 leftObstacleDist = forwardLeft.y();
                 velMult = 0.5;
             }
+*/
             if (minSideDist > 0 && leftObstacleDist < 1.0) {
                 lateralError = sideTurnWeight * -(minSideDist - leftObstacleDist);
             }
@@ -721,6 +723,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
                                                           rotation));
 
+#if 0
         // Limit angular deviation from planned path to prevent turning around
         if (cyaw > maxAngularDev && rotation < 0) {
             rotation = 0;
@@ -728,6 +731,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         else if (cyaw < -maxAngularDev && rotation > 0) {
             rotation = 0;
         }
+#endif
 
         printf("Debug %f %f %f %f %f %f %f\n",
                leftObstacleDist, rightObstacleDist,
