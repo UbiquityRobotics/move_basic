@@ -501,25 +501,11 @@ float ObstacleDetector::obstacle_dist(bool forward,
               tf2::Vector3(fr.x(), -fr.y(), 0), 0, 0, 1, 30001);
 
     // Min side dist
-    draw_line(tf2::Vector3(robot_front_length, -min_side_dist, 0),
-              tf2::Vector3(robot_front_length + 2, -min_side_dist, 0), 0.5, 0.5, 0, 40001);
+    draw_line(tf2::Vector3(robot_front_length, -robot_width -min_side_dist, 0),
+              tf2::Vector3(robot_front_length + 2, -robot_width -min_side_dist, 0), 0.5, 0.5, 0, 40001);
 
-    draw_line(tf2::Vector3(robot_front_length, min_side_dist, 0),
-              tf2::Vector3(robot_front_length + 2, min_side_dist, 0), 0.5, 0.5, 0, 40002);
-
-    draw_line(tf2::Vector3(robot_front_length, -max_side_dist, 0),
-              tf2::Vector3(robot_front_length + 2, -max_side_dist, 0), 0.5, 0.5, 0, 40003);
-
-    draw_line(tf2::Vector3(robot_front_length, max_side_dist, 0),
-              tf2::Vector3(robot_front_length + 2, max_side_dist, 0), 0.5, 0.5, 0, 40004);
-
-   float mid_dist = (max_side_dist + min_side_dist) / 2.0;
-
-    draw_line(tf2::Vector3(robot_front_length, -mid_dist, 0),
-              tf2::Vector3(robot_front_length + 2, -mid_dist, 0), 0.25, 0.25, 0, 40005);
-
-    draw_line(tf2::Vector3(robot_front_length, mid_dist, 0),
-              tf2::Vector3(robot_front_length + 2, mid_dist, 0), 0.25, 0.25, 0, 40006);
+    draw_line(tf2::Vector3(robot_front_length, robot_width+min_side_dist, 0),
+              tf2::Vector3(robot_front_length + 2, robot_width+min_side_dist, 0), 0.5, 0.5, 0, 40002);
 
     // Red line at front or back
     if (forward) {
@@ -538,6 +524,9 @@ float ObstacleDetector::obstacle_dist(bool forward,
                   tf2::Vector3(-min_dist, robot_width, 0), 1, 0, 0, 10000);
         min_dist -= robot_back_length;
     }
+
+    min_dist_left -= robot_width;
+    min_dist_right -= robot_width;
     return min_dist;
 }
 

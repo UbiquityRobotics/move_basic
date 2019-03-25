@@ -41,6 +41,7 @@
 #include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/UInt8.h>
 
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
@@ -51,17 +52,16 @@
 
 typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
 
-enum State {
-    FOLLOWING_LEFT,
-    FOLLOWING_RIGHT,
-    AVOIDING_LEFT,
-    AVOIDING_RIGHT,
-    GOING_STRAIGHT
+enum {
+    DRIVE_STRAIGHT,
+    FOLLOW_LEFT,
+    FOLLOW_RIGHT
 };
 
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber followSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -102,9 +102,11 @@ class MoveBasic {
     std::string odomFrame;
     std::string baseFrame;
 
+    volatile int followMode;
+
     double minSideDist;
-    double maxSideDist;
     double maxLateralDev;
+    double maxAngularDev;
     double sideTurnWeight;
     double sideRecoverWeight;
     double maxTurn;
@@ -126,6 +128,8 @@ class MoveBasic {
                       tf2::Transform& tf);
     bool transformPose(const std::string& from, const std::string& to,
                        const tf2::Transform& in, tf2::Transform& out);
+
+    void followModeCallback(const std_msgs::UInt8::ConstPtr &msg);
 
   public:
     MoveBasic();
@@ -189,7 +193,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 // Constructor
 
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
-                        listener(tfBuffer)
+                        listener(tfBuffer), followMode(DRIVE_STRAIGHT)
 {
     ros::NodeHandle nh("~");
 
@@ -199,36 +203,36 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
 
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
-    nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.2);
+    nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("linear_tolerance", linearTolerance, 0.01);
 
     // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 1.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 50.0);
+    nh.param<double>("lateral_kd", lateralKd, 0.0);
 
     // Minimum distance to maintain at each side
-    nh.param<double>("min_side_dist", minSideDist, 0.2);
+    nh.param<double>("min_side_dist", minSideDist, 0.3);
 
-    // Maximum distance to maintain at each side
-    nh.param<double>("max_side_dist", maxSideDist, 1.0);
-
-    // Limits on turning to avoid obstacles
-    nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
-
-    nh.param<double>("max_turn", maxTurn, deg2rad(60));
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
 
+    // Maximum allowed deviation from straight path
+    nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(30.0));
+
+    // Maximum angular velocity during linear portion
+    nh.param<double>("max_lateral_rotation", lateralMaxRotation, deg2rad(0.5));
+
     // Weighting of turning to avoid side obstacles
-    nh.param<double>("side_turn_weight", sideTurnWeight, 0.3);
+    nh.param<double>("side_turn_weight", sideTurnWeight, 100.0);
 
     // Weighting of turning to recover from avoiding side obstacles
-    nh.param<double>("side_turn_weight", sideRecoverWeight, 0.3);
+    nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
+
     nh.param<int>("rotation_attempts", rotationAttempts, 1);
 
     // how long to wait for an obstacle to disappear
@@ -249,6 +253,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/obstacle_distance", 1));
     errorPub =
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
+
+    followSub = nh.subscribe("/follow_mode", 1, &MoveBasic::followModeCallback,
+                             this);
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
@@ -297,6 +304,16 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     out = tf * in;
     return true;
 }
+
+
+// Called when a follow mode message is received
+
+void MoveBasic::followModeCallback(const std_msgs::UInt8::ConstPtr &msg)
+{
+    followMode = msg->data;
+    ROS_INFO("Received follow mode %d", followMode);
+}
+
 
 // Called when a simple goal message is received
 
@@ -440,6 +457,12 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
     }
 
+    // XXX bogus rotation to test linear recovery
+    // TODO: incorporate this into testing
+#ifdef TEST_PID
+    rotate(deg2rad(45));
+#endif
+
     // Do linear portion of goal
     double dist = linear.length();
     ROS_INFO("Requested distance %f", dist);
@@ -488,11 +511,9 @@ void MoveBasic::run()
     ros::Rate r(20);
     std_msgs::Float32 msg;
 
-    obstacle_detector->min_side_dist = minSideDist;
-    obstacle_detector->max_side_dist = maxSideDist;
     while (ros::ok()) {
         ros::spinOnce();
-
+        obstacle_detector->min_side_dist = minSideDist;
         forwardObstacleDist = obstacle_detector->obstacle_dist(true,
                                                                leftObstacleDist,
                                                                rightObstacleDist,
@@ -610,40 +631,9 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
     double lateralPrevError = 0.0;
     double lateralError = 0.0;
 
-    double midSideDist = (minSideDist + maxSideDist) / 2.0;
-
-    double turnInInitialYaw = 0;
-    bool turningIn = false;
-
-    //printf("left %f right %f min %f max %f\n", leftObstacleDist, rightObstacleDist, minSideDist, maxSideDist);
-    State prevState = GOING_STRAIGHT;
-    if (minSideDist < leftObstacleDist && leftObstacleDist < maxSideDist) {
-        prevState = FOLLOWING_LEFT;
-        printf("state = fOLLOWING_LEFT\n");
-    }
-    else if (minSideDist < rightObstacleDist && rightObstacleDist < maxSideDist) {
-        prevState = FOLLOWING_RIGHT;
-        printf("state = fOLLOWING_RIGHT\n");
-    }
-
     while (!done && ros::ok()) {
         ros::spinOnce();
         r.sleep();
-
-        State currState = GOING_STRAIGHT;
-        if (minSideDist < leftObstacleDist && leftObstacleDist < maxSideDist) {
-            currState = FOLLOWING_LEFT;
-            if (currState != prevState) {
-                //printf("state = fOLLOWING_LEFT\n");
-            }
-        }
-        else if (minSideDist < rightObstacleDist && rightObstacleDist < maxSideDist) {
-            currState = FOLLOWING_RIGHT;
-            if (currState != prevState) {
-                //printf("state = fOLLOWING_RIGHT\n");
-            }
-        }
-  
 
         tf2::Transform poseOdom;
         if (!getTransform(odomFrame, baseFrame, poseOdom)) {
@@ -661,26 +651,43 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
-        /*
-            In order of priority, we need to look at
-            - Is the robot blocked in the forward direction, in which
-              case we need to turn
-            - Is there an upcoming side obstacle, in which case
-              we need to slow down and/or steer
-            In the abscense of those,
-            - Maintain side distance when appropriate
-            - Adjust heading so that cyaw is going towards zero
-            - Fine tune by steering to minimize cy
-         */
-
-        double obstacleDist = forwardObstacleDist;
-
-        // If there is a side obstacle in front of us, use this
-        // distance as the side distance.  Note that the forward
-        // obstacles are much less reliable than the side obstacles.
-        bool canTurn = maxTurn == 0 || std::abs(cyaw) <= maxTurn;
-        char *dir = (char *)"";
         double velMult = 1.0;
+
+        if (followMode == FOLLOW_LEFT) {
+            // Check encroachment vectors for a side obstacle in the future
+            // Only pay attention to them if they are more restrictive than
+            // the current side obstacles.
+            if (forwardLeft.y() < minSideDist &&
+                leftObstacleDist > minSideDist) {
+                leftObstacleDist = forwardLeft.y();
+                velMult = 0.5;
+            }
+            if (minSideDist > 0 && leftObstacleDist < 1.0) {
+                lateralError = sideTurnWeight * -(minSideDist - leftObstacleDist);
+            }
+            else {
+                lateralError = 0.0;
+            }
+        }
+        else if (followMode == FOLLOW_RIGHT) {
+            // Check encroachment vectors for a side obstacle in the future
+            // Only pay attention to them if they are more restrictive than
+            // the current side obstacles.
+            if (forwardRight.y() < minSideDist &&
+                rightObstacleDist > minSideDist) {
+                rightObstacleDist = forwardRight.y();
+                velMult = 0.5;
+            }
+            else if (minSideDist > 0 && rightObstacleDist < 1.0) {
+                lateralError = sideTurnWeight * (minSideDist - rightObstacleDist);
+            }
+            else {
+                lateralError = 0.0;
+            }
+        }
+        else { // stick to planned path
+            lateralError = sideRecoverWeight * remaining.y();
+        }
 /*
         Future enhancement: turn to avoid a forward obstacle
 
@@ -688,114 +695,13 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         if (canTurn && forwardObstacleDist < 1.0) {
             if (leftObstacleDist > rightObstacleDist) {
                lateralError = lateralMaxRotation;
-               dir = 'L';
             }
             else {
                lateralError = -lateralMaxRotation;
-               dir = 'R';
             }
         }
 */
-        // Check encroachment vectors for a side obstacle in the future
-        // Only pay attention to them if they are more restrictive than
-        // the current side obstacles.  Since it's not clear what they mean,
-        // we limit the linear speed.
-        if (forwardLeft.y() < leftObstacleDist && leftObstacleDist > minSideDist && leftObstacleDist < maxSideDist) {
-            leftObstacleDist = forwardLeft.y();
-            velMult = 0.5;
-        }
-        if (forwardRight.y() < rightObstacleDist && rightObstacleDist > minSideDist && rightObstacleDist < maxSideDist) {
-            rightObstacleDist = forwardRight.y();
-            velMult = 0.5;
-        }
-
-        // Avoiding turns away from the side object to increase the distance
-        if (minSideDist > 0 && leftObstacleDist < minSideDist &&
-            rightObstacleDist >= minSideDist) {
-            lateralError = sideTurnWeight * (minSideDist - leftObstacleDist);
-            if (prevState != AVOIDING_LEFT) {
-                prevState = currState;
-            }
-            currState = AVOIDING_LEFT;
-            printf("state = AVOIDING_LEFT\n");
-            dir = (char *)">";
-        }
-        else if (minSideDist > 0 && rightObstacleDist < minSideDist &&
-                 leftObstacleDist >= minSideDist) {
-            lateralError = sideTurnWeight * (minSideDist - rightObstacleDist);
-            if (prevState != AVOIDING_RIGHT) {
-                prevState = currState;
-            }
-            currState = AVOIDING_RIGHT;
-            printf("state = AVOIDING_RIGHT\n");
-            dir = (char *)"<";
-        }
-        else {
-            if (prevState == FOLLOWING_LEFT && leftObstacleDist < 9 && maxSideDist > 0) {
-                lateralError = 1.0 * -(midSideDist - leftObstacleDist);
-                if (leftObstacleDist > midSideDist) {
-                    // Be cautious when turning towards a side object,
-                    // Since at an angle it will appear further away.
-                    // This would be easier with more sonar sensors.
-                    /*
-                    if (!canTurn) {
-                        lateralError = 0;
-                    }
-                    */
-                    //lateralError *= 0.5;
-                    dir = (char *)"F-";
-                }
-                else {
-                    dir = (char *)"F+";
-                }
-                //printf("left %f mid %f err %f\n", leftObstacleDist, midSideDist, lateralError);
-            }
-            else if (prevState == FOLLOWING_RIGHT && rightObstacleDist < 9 && maxSideDist > 0) {
-                lateralError = 1.0 * (midSideDist - rightObstacleDist);
-                if (rightObstacleDist > midSideDist) {
-                    // Be cautious when turning towards a side object,
-                    // Since at an angle it will appear further away.
-                    // This would be easier with more sonar sensors.
-                    //lateralError *= 0.5;
-                    /*
-                    if (!canTurn) {
-                        lateralError = 0;
-                    }
-                    */
-                    dir = (char *)"f-";
-                }
-                else {
-                    turningIn = false;
-                    dir = (char *)"f+";
-                }
-                //printf("state = returning to FOLLOWING_RIGHT\n");
-            }
-            else {
-                 lateralError = sideRecoverWeight * remaining.y();
-                 if (prevState != GOING_STRAIGHT) {
-                     printf("state = returning to GOING_STRAIGHT\n");
-                     //prevState = GOING_STRAIGHT;
-                 }
-                 dir = (char *)"|";
-            }
-            /*
-            Future enhancement: use cyaw to figure out how to get
-            back on track, since the lateral error is misleading,
-            if a large change in direction has taken place.
-            Note that cyaw is misleading if a large distance is
-            being travelled.
-            }
-            else {
-                lateralError = cyaw / 3.0;
-                dir = 'A';
-            }
-            */
-        }
-
-        printf("Debug %s %f %f %f %f %f %f\n", dir, leftObstacleDist, rightObstacleDist,
-               remaining.x(), remaining.y(), lateralError, rad2deg(cyaw));
-
-        if (!canTurn || std::abs(remaining.y()) >= maxLateralDev) {
+        if (std::abs(remaining.y()) >= maxLateralDev) {
             abortGoal("Aborting since max deviation reached");
             sendCmd(0, 0);
             return false;
@@ -811,25 +717,31 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
 
-        // Clamp rotation - TODO: is this necessary now we limit total rotation?
-/*
+        // Clamp rotation
         rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
                                                           rotation));
-*/
+
+        // Limit angular deviation from planned path to prevent turning around
+        if (cyaw > maxAngularDev && rotation < 0) {
+            rotation = 0;
+        }
+        else if (cyaw < -maxAngularDev && rotation > 0) {
+            rotation = 0;
+        }
+
+        printf("Debug %f %f %f %f %f %f %f\n",
+               leftObstacleDist, rightObstacleDist,
+               remaining.x(), remaining.y(), lateralError,
+               rotation, rad2deg(cyaw));
 
         // Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
-        pid_debug.x = lateralError; //remaining.x();
-        pid_debug.y = rotation; //remaining.y();
+        pid_debug.x = remaining.x();
+        pid_debug.y = lateralError;
+        pid_debug.z = rotation;
         errorPub.publish(pid_debug);
 
-        if (rotation > lateralMaxRotation) {
-            rotation = lateralMaxRotation;
-        }
-        else if (rotation < -lateralMaxRotation) {
-            rotation = -lateralMaxRotation;
-        }
-
+        double obstacleDist = forwardObstacleDist;
         if (requestedDistance < 0.0) { // Reverse
             obstacleDist = obstacle_detector->obstacle_dist(false,
                                                             leftObstacleDist,
