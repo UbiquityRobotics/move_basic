@@ -41,7 +41,7 @@
 #include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
-#include <std_msgs/UInt8.h>
+#include <move_basic/FollowMode.h>
 
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
@@ -130,7 +130,7 @@ class MoveBasic {
     bool transformPose(const std::string& from, const std::string& to,
                        const tf2::Transform& in, tf2::Transform& out);
 
-    void followModeCallback(const std_msgs::UInt8::ConstPtr &msg);
+    void followModeCallback(const move_basic::FollowMode::ConstPtr &msg);
 
   public:
     MoveBasic();
@@ -312,9 +312,9 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 // Called when a follow mode message is received
 
-void MoveBasic::followModeCallback(const std_msgs::UInt8::ConstPtr &msg)
+void MoveBasic::followModeCallback(const move_basic::FollowMode::ConstPtr &msg)
 {
-    followMode = msg->data;
+    followMode = msg->follow_mode;
     ROS_INFO("Received follow mode %d", followMode);
 }
 
