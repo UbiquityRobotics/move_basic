@@ -131,7 +131,6 @@ public:
    // for testing
    void add_test_point(tf2::Vector3 p);
 
-   //TODO: refactor
    double min_side_dist;
    double max_side_dist;
 
