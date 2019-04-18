@@ -98,8 +98,10 @@ class MoveBasic {
     double frontToLidar;
     double obstacleWaitLimit;
 
-    std::string mapFrame;
-    std::string odomFrame;
+    std::string preferredPlanningFrame;
+    std::string alternatePlanningFrame;
+    std::string preferredDrivingFrame;
+    std::string alternateDrivingFrame;
     std::string baseFrame;
 
     volatile int followMode;
@@ -137,8 +139,9 @@ class MoveBasic {
 
     void run();
 
-    bool moveLinear(const tf2::Transform& goalInOdom);
-    bool rotate(double requestedYaw);
+    bool moveLinear(const tf2::Transform& goalInDriving,
+                    std::string drivingFrame);
+    bool rotate(double requestedYaw, std::string drivingFrame);
 };
 
 
@@ -246,8 +249,14 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("reverse_without_turning_threshold",
                       reverseWithoutTurningThreshold, 0.5);
 
-    nh.param<std::string>("map_frame", mapFrame, "map");
-    nh.param<std::string>("odom_frame", odomFrame, "odom");
+    nh.param<std::string>("preferred_planning_frame",
+                          preferredPlanningFrame, "map");
+    nh.param<std::string>("alternate_planning_frame",
+                          alternatePlanningFrame, "odom");
+    nh.param<std::string>("preferred_planning_frame",
+                          preferredDrivingFrame, "map");
+    nh.param<std::string>("alternate_planning_frame",
+                          alternateDrivingFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_link");
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
@@ -376,20 +385,26 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         return;
     }
 
-    std::string goalFrame;
+    std::string planningFrame;
     double goalYaw;
 
     tf2::Transform goalMap;
-    if (!transformPose(frameId, mapFrame, goal, goalMap)) {
+    if (!transformPose(frameId, preferredPlanningFrame, goal, goalMap)) {
         ROS_WARN("Will attempt to operate in %s frame", frameId.c_str());
-        goalFrame = frameId;
+        if (!transformPose(frameId, alternatePlanningFrame, goal, goalMap)) {
+            abortGoal("No localization available for planning");
+            return;
+        }
+        planningFrame = alternatePlanningFrame;
         goalYaw = yaw;
     }
     else {
-        ROS_INFO("Goal in %s  %f %f %f", mapFrame.c_str(), x, y, rad2deg(goalYaw));
-        goalFrame = mapFrame;
-        getPose(goalMap, x, y, goalYaw);
+        planningFrame = preferredPlanningFrame;
     }
+
+    getPose(goalMap, x, y, goalYaw);
+    ROS_INFO("Goal in %s  %f %f %f", planningFrame.c_str(),
+             x, y, rad2deg(goalYaw));
 
     // publish our planned path
     nav_msgs::Path path;
@@ -413,20 +428,28 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     pathPub.publish(path);
 
-    tf2::Transform currentOdomBase;
+    std::string drivingFrame;
+    tf2::Transform goalInDriving;
+    tf2::Transform currentDrivingBase;
     // Should be at time of goal message
-    if (!getTransform(odomFrame, baseFrame, currentOdomBase)) {
-         ROS_WARN("Cannot determine robot pose");
-         return;
+    if (!getTransform(preferredDrivingFrame, baseFrame, currentDrivingBase)) {
+         ROS_WARN("Attempting to use %s frame", alternateDrivingFrame.c_str());
+         if (!getTransform(alternateDrivingFrame,
+                           baseFrame, currentDrivingBase)) {
+             abortGoal("Cannot determine robot pose");
+             return;
+         }
+         else {
+             drivingFrame = alternateDrivingFrame;
+         }
+    }
+    else {
+         drivingFrame = preferredDrivingFrame;
     }
 
-    tf2::Transform goalInOdom;
-    if (!transformPose(frameId, odomFrame, goal, goalInOdom)) {
-         ROS_WARN("Cannot determine robot pose for linear");
-         return;
-    }
+    tf2::Transform currentBaseDriving = currentDrivingBase.inverse();
 
-    tf2::Transform goalInBase = currentOdomBase * goalInOdom;
+    tf2::Transform goalInBase = currentDrivingBase * goalInDriving;
 
     tf2::Vector3 linear = goalInBase.getOrigin();
     bool reverseWithoutTurning =
@@ -454,7 +477,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             if (std::abs(requestedYaw) < angularTolerance) {
                 break;
             }
-            if (!rotate(requestedYaw)) {
+            if (!rotate(requestedYaw, drivingFrame)) {
                 return;
             }
             sleep(localizationLatency);
@@ -475,7 +498,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         if (reverseWithoutTurning) {
             dist = - dist;
         }
-        if (!moveLinear(goalInOdom)) {
+        if (!moveLinear(goalInDriving, drivingFrame)) {
             return;
         }
         sleep(localizationLatency);
@@ -483,13 +506,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     // Final rotation as specified in goal
     tf2::Transform finalPose;
-    if (!getTransform(baseFrame, goalFrame, finalPose)) {
+    if (!getTransform(baseFrame, drivingFrame, finalPose)) {
          abortGoal("Cannot determine robot pose for final rotation");
          return;
     }
 
     getPose(finalPose, x, y, yaw);
-    rotate(goalYaw - yaw);
+    rotate(goalYaw - yaw, drivingFrame);
 
     actionServer->setSucceeded();
 }
@@ -536,18 +559,18 @@ void MoveBasic::run()
 
 // Rotate relative to current orientation
 
-bool MoveBasic::rotate(double yaw)
+bool MoveBasic::rotate(double yaw, std::string drivingFrame)
 {
     ROS_INFO("Requested rotation %f", rad2deg(yaw));
 
-    tf2::Transform poseOdom;
-    if (!getTransform(baseFrame, odomFrame, poseOdom)) {
+    tf2::Transform poseDriving;
+    if (!getTransform(baseFrame, drivingFrame, poseDriving)) {
          abortGoal("Cannot determine robot pose for rotation");
          return false;
     }
 
     double x, y, currentYaw;
-    getPose(poseOdom, x, y, currentYaw);
+    getPose(poseDriving, x, y, currentYaw);
     double requestedYaw = currentYaw + yaw;
     normalizeAngle(requestedYaw);
 
@@ -562,12 +585,12 @@ bool MoveBasic::rotate(double yaw)
         r.sleep();
 
         double x, y, currentYaw;
-        tf2::Transform poseOdom;
-        if (!getTransform(baseFrame, odomFrame, poseOdom)) {
+        tf2::Transform poseDriving;
+        if (!getTransform(baseFrame, drivingFrame, poseDriving)) {
             abortGoal("Cannot determine robot pose for rotation");
             return false;
         }
-        getPose(poseOdom, x, y, currentYaw);
+        getPose(poseDriving, x, y, currentYaw);
 
         double angleRemaining = requestedYaw - currentYaw;
         normalizeAngle(angleRemaining);
@@ -613,7 +636,8 @@ bool MoveBasic::rotate(double yaw)
 
 // Move forward specified distance
 
-bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
+bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
+                           std::string drivingFrame)
 {
     bool done = false;
     ros::Rate r(50);
@@ -621,14 +645,14 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
     bool waitingForObstacle = false;
     ros::Time obstacleTime;
 
-    tf2::Transform poseOdomInitial;
-    if (!getTransform(baseFrame, odomFrame, poseOdomInitial)) {
+    tf2::Transform poseDrivingInitial;
+    if (!getTransform(baseFrame, drivingFrame, poseDrivingInitial)) {
          abortGoal("Cannot determine robot pose for linear");
          return false;
     }
 
-    double requestedDistance = (poseOdomInitial.getOrigin() -
-                                goalInOdom.getOrigin()).length();
+    double requestedDistance = (poseDrivingInitial.getOrigin() -
+                                goalInDriving.getOrigin()).length();
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -639,16 +663,16 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInOdom)
         ros::spinOnce();
         r.sleep();
 
-        tf2::Transform poseOdom;
-        if (!getTransform(odomFrame, baseFrame, poseOdom)) {
+        tf2::Transform poseDriving;
+        if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
              ROS_WARN("Cannot determine robot pose for linear");
              continue;
         }
 
-        tf2::Transform goalInBase = poseOdom * goalInOdom;
+        tf2::Transform goalInBase = poseDriving * goalInDriving;
         tf2::Vector3 remaining = goalInBase.getOrigin();
 
-        tf2::Transform initialBaseToCurrent = poseOdom * poseOdomInitial;
+        tf2::Transform initialBaseToCurrent = poseDriving * poseDrivingInitial;
         double cx, cy, cyaw;
         getPose(initialBaseToCurrent, cx, cy, cyaw);
 
