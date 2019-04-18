@@ -28,8 +28,13 @@ Please refer to [the move_basic wiki page](http://wiki.ros.org/move_basic) for n
 
 ## New obstacle avoidance behavoir (March 2019)
 
-New behavior was added in the `side_dist` branch.  This code will be reviewed
-and will be released into the package.
+New behavior was added in the `side_dist` branch.  The behavior is to
+follow a wall or similar object at the side.
+
+New subscription:
+
+`/follow_mode`: (int) Follow mode: 0 None, 1 Left, 2 Right.
+
 
 New parameters:
 
