@@ -388,10 +388,11 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     std::string planningFrame;
     double goalYaw;
 
-    tf2::Transform goalMap;
-    if (!transformPose(frameId, preferredPlanningFrame, goal, goalMap)) {
-        ROS_WARN("Will attempt to operate in %s frame", frameId.c_str());
-        if (!transformPose(frameId, alternatePlanningFrame, goal, goalMap)) {
+    tf2::Transform goalPlanning;
+    if (!transformPose(frameId, preferredPlanningFrame, goal, goalPlanning)) {
+        ROS_WARN("Will attempt to plan in %s frame", frameId.c_str());
+        if (!transformPose(frameId, alternatePlanningFrame, goal,
+            goalPlanning)) {
             abortGoal("No localization available for planning");
             return;
         }
@@ -402,7 +403,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         planningFrame = preferredPlanningFrame;
     }
 
-    getPose(goalMap, x, y, goalYaw);
+    getPose(goalPlanning, x, y, goalYaw);
     ROS_INFO("Goal in %s  %f %f %f", planningFrame.c_str(),
              x, y, rad2deg(goalYaw));
 
@@ -417,7 +418,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Transform poseFrameId;
     if (!getTransform(baseFrame, frameId, poseFrameId)) {
-         abortGoal("Cannot determine robot pose");
+         abortGoal("Cannot determine robot pose in goal frame");
          return;
     }
     getPose(poseFrameId, x, y, yaw);
@@ -433,10 +434,11 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     tf2::Transform currentDrivingBase;
     // Should be at time of goal message
     if (!getTransform(preferredDrivingFrame, baseFrame, currentDrivingBase)) {
-         ROS_WARN("Attempting to use %s frame", alternateDrivingFrame.c_str());
+         ROS_WARN("Attempting to drive using %s frame",
+                  alternateDrivingFrame.c_str());
          if (!getTransform(alternateDrivingFrame,
                            baseFrame, currentDrivingBase)) {
-             abortGoal("Cannot determine robot pose");
+             abortGoal("Cannot determine robot pose in driving frame");
              return;
          }
          else {
@@ -447,7 +449,10 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
          drivingFrame = preferredDrivingFrame;
     }
 
-    tf2::Transform currentBaseDriving = currentDrivingBase.inverse();
+    if (!transformPose(frameId, drivingFrame, goal, goalInDriving)) {
+         abortGoal("Cannot determine robot pose in driving frame");
+         return;
+    }
 
     tf2::Transform goalInBase = currentDrivingBase * goalInDriving;
 
