@@ -209,7 +209,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.01);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.03);
 
     // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 10.0);
@@ -506,6 +506,16 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         if (!moveLinear(goalInDriving, drivingFrame)) {
             return;
         }
+        {
+            tf2::Transform poseFrameIdFinal;
+            if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
+                 ROS_WARN("Cannot determine robot pose in goal frame");
+            }
+            tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
+                                         poseFrameId.getOrigin();
+            printf("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
+        }
+
         sleep(localizationLatency);
     }
 
@@ -518,6 +528,20 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     getPose(finalPose, x, y, yaw);
     rotate(goalYaw - yaw, drivingFrame);
+
+/*
+    sleep(10);
+    // Final sanity check
+    {
+        tf2::Transform poseFrameIdFinal;
+        if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
+             ROS_WARN("Cannot determine robot pose in goal frame");
+        }
+        tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
+                                     poseFrameId.getOrigin();
+        printf("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
+    }
+*/
 
     actionServer->setSucceeded();
 }
@@ -658,6 +682,10 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
     double requestedDistance = (poseDrivingInitial.getOrigin() -
                                 goalInDriving.getOrigin()).length();
+    {
+        tf2::Vector3 d = goalInDriving.getOrigin();
+        printf("Goal in driving %f %f\n", d.x(), d.y());
+    }
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -677,7 +705,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         tf2::Transform goalInBase = poseDriving * goalInDriving;
         tf2::Vector3 remaining = goalInBase.getOrigin();
 
-        tf2::Transform initialBaseToCurrent = poseDriving * poseDrivingInitial;
+        tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
         getPose(initialBaseToCurrent, cx, cy, cyaw);
 
@@ -806,7 +834,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         double velocity = std::max(minLinearVelocity,
             std::min(maxLinearVelocity, std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
-              std::sqrt(linearAcceleration *
+              std::sqrt(0.5 * linearAcceleration *
                  std::min(obstacleDist, distRemaining)))));
 
         // Stop if there is an obstacle in the distance we would travel in
