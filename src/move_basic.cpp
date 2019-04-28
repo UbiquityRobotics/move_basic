@@ -324,7 +324,15 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 void MoveBasic::followModeCallback(const move_basic::FollowMode::ConstPtr &msg)
 {
     followMode = msg->follow_mode;
-    ROS_INFO("Received follow mode %d", followMode);
+    ROS_INFO("Received follow mode %d dist %f speed %f",
+             followMode, msg->follow_dist, msg->speed);
+
+    if (msg->follow_dist != 0) {
+        minSideDist = msg->follow_dist;
+    }
+    if (msg->speed != 0) {
+        maxLinearVelocity = msg->speed;
+    }
 }
 
 
