@@ -534,8 +534,10 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
          return;
     }
 
-    getPose(finalPose, x, y, yaw);
-    rotate(goalYaw - yaw, drivingFrame);
+    if (followMode==DRIVE_STRAIGHT) {
+        getPose(finalPose, x, y, yaw);
+        rotate(goalYaw - yaw, drivingFrame);
+    }
 
 /*
     sleep(10);
