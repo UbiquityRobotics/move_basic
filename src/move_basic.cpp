@@ -107,12 +107,13 @@ class MoveBasic {
     volatile int followMode;
 
     double minSideDist;
+    double maxSideDist;
     double maxLateralDev;
     double maxAngularDev;
     double sideTurnOutWeight;
     double sideTurnInWeight;
     double sideRecoverWeight;
-    double maxTurn;
+    double maxFollowDistWithoutWall;
 
     float forwardObstacleDist;
     float leftObstacleDist;
@@ -219,6 +220,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
 
+    // Maximum distance to side before deciding there is nothing to follow
+    nh.param<double>("max_side_dist", maxSideDist, 1.0);
+
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
 
@@ -236,6 +240,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
 
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
+
+    // How long to drive in folow mode without a wall
+    nh.param<double>("max_follow_dist_without_wall", maxFollowDistWithoutWall, 0.5);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
@@ -721,6 +728,8 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
+        double firstDistWithoutWall = 0;
+        bool hasWall = true;
 
         double velMult = 1.0;
 
@@ -790,6 +799,24 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
             }
         }
 */
+        // Abort if following a wall that is not there
+        if (followMode != DRIVE_STRAIGHT && maxFollowDistWithoutWall > 0) {
+            bool prevHasWall = hasWall;
+            if (followMode == FOLLOW_LEFT) {
+                hasWall = leftObstacleDist <= maxSideDist;
+            }
+            else if (followMode == FOLLOW_RIGHT) {
+                hasWall = rightObstacleDist <= maxSideDist;
+            }
+            if (!hasWall && prevHasWall) {
+                firstDistWithoutWall = distTravelled;
+            }
+            if (!hasWall && std::abs(firstDistWithoutWall - distTravelled) > maxFollowDistWithoutWall) {
+                abortGoal("Aborting since no wall to folow");
+                sendCmd(0, 0);
+                return false;
+            }
+        }
         if (std::abs(remaining.y()) >= maxLateralDev) {
             abortGoal("Aborting since max deviation reached");
             sendCmd(0, 0);
