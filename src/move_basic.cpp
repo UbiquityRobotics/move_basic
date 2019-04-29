@@ -241,7 +241,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
 
-    // How long to drive in folow mode without a wall
+    // How long to drive in follow mode without a wall
     nh.param<double>("max_follow_dist_without_wall", maxFollowDistWithoutWall, 0.5);
 
     // how long to wait after moving to be sure localization is accurate
@@ -708,6 +708,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
     double lateralIntegral = 0.0;
     double lateralPrevError = 0.0;
     double lateralError = 0.0;
+    bool hasWall = true;
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -729,7 +730,6 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
         double firstDistWithoutWall = 0;
-        bool hasWall = true;
 
         double velMult = 1.0;
 
@@ -812,7 +812,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
                 firstDistWithoutWall = distTravelled;
             }
             if (!hasWall && std::abs(firstDistWithoutWall - distTravelled) > maxFollowDistWithoutWall) {
-                abortGoal("Aborting since no wall to folow");
+                abortGoal("Aborting since no wall to follow");
                 sendCmd(0, 0);
                 return false;
             }
