@@ -141,7 +141,7 @@ class MoveBasic {
     void run();
 
     bool moveLinear(const tf2::Transform& goalInDriving,
-                    std::string drivingFrame);
+                    std::string drivingFrame, bool forward);
     bool rotate(double requestedYaw, std::string drivingFrame);
 };
 
@@ -518,7 +518,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         if (reverseWithoutTurning) {
             dist = - dist;
         }
-        if (!moveLinear(goalInDriving, drivingFrame)) {
+        if (!moveLinear(goalInDriving, drivingFrame, dist>=0)) {
             return;
         }
         {
@@ -683,7 +683,7 @@ bool MoveBasic::rotate(double yaw, std::string drivingFrame)
 // Move forward specified distance
 
 bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
-                           std::string drivingFrame)
+                           std::string drivingFrame, bool forward)
 {
     bool done = false;
     ros::Rate r(50);
@@ -722,6 +722,9 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
         tf2::Transform goalInBase = poseDriving * goalInDriving;
         tf2::Vector3 remaining = goalInBase.getOrigin();
+        if (!forward) {
+           remaining = -remaining;
+        }
 
         tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
@@ -914,6 +917,9 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
             done = true;
             ROS_INFO("Done linear, error %f, %f meters",
                      remaining.x(), remaining.y());
+        }
+        if (!forward) {
+            velocity = -velocity;
         }
         sendCmd(rotation, velMult * velocity);
     }
