@@ -38,11 +38,12 @@ New subscription:
 
 New parameters:
 
-`~min_side_dist`: (float) Minimum distance to maintain at each side in
+`~min_side_dist`: (float) Target distance to maintain in side following mode
 meters.  Default 0.2.
 
-`~max_side_dist`: (float) Maximum distance to maintain at each side in
-meters.  Default 1.0.
+`~max_side_dist`: (float) Maximum distance in meters at side before determining there is nothing there.  Default 1.0.  
+
+`max_follow_dist_without_wall`: (float) Maximum distance to travel with no side object in following mode before aborting.  Default 0.5.
 
 `~max_lateral_deviation`: (float) Maximum deviation from a straight path
 before aborting the current goal. Default 4.0.
