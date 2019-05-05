@@ -227,7 +227,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
 
     // Maximum allowed deviation from straight path
-    nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(70.0));
+    nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(20.0));
 
     // Maximum angular velocity during linear portion
     nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
