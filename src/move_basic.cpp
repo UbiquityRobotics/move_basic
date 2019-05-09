@@ -141,7 +141,7 @@ class MoveBasic {
     void run();
 
     bool moveLinear(const tf2::Transform& goalInDriving,
-                    std::string drivingFrame, bool forward);
+                    std::string drivingFrame);
     bool rotate(double requestedYaw, std::string drivingFrame);
 };
 
@@ -518,7 +518,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         if (reverseWithoutTurning) {
             dist = - dist;
         }
-        if (!moveLinear(goalInDriving, drivingFrame, dist>=0)) {
+        if (!moveLinear(goalInDriving, drivingFrame)) {
             return;
         }
         {
@@ -683,7 +683,7 @@ bool MoveBasic::rotate(double yaw, std::string drivingFrame)
 // Move forward specified distance
 
 bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
-                           std::string drivingFrame, bool forward)
+                           std::string drivingFrame)
 {
     bool done = false;
     ros::Rate r(50);
@@ -699,10 +699,17 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
     double requestedDistance = (poseDrivingInitial.getOrigin() -
                                 goalInDriving.getOrigin()).length();
-    {
-        tf2::Vector3 d = goalInDriving.getOrigin();
-        printf("Goal in driving %f %f\n", d.x(), d.y());
+
+    tf2::Transform poseDriving;
+    if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
+         abortGoal("Cannot determine robot pose for linear");
+         return false;
     }
+
+    tf2::Transform goalInBase = poseDriving * goalInDriving;
+    tf2::Vector3 remaining = goalInBase.getOrigin();
+    printf("remaining %f %f\n", remaining.x(), remaining.y());
+    bool forward = (remaining.x() > 0);
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -714,14 +721,13 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         ros::spinOnce();
         r.sleep();
 
-        tf2::Transform poseDriving;
         if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
              ROS_WARN("Cannot determine robot pose for linear");
              continue;
         }
 
-        tf2::Transform goalInBase = poseDriving * goalInDriving;
-        tf2::Vector3 remaining = goalInBase.getOrigin();
+        goalInBase = poseDriving * goalInDriving;
+        remaining = goalInBase.getOrigin();
         if (!forward) {
            remaining = -remaining;
         }
