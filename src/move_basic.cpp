@@ -473,7 +473,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Vector3 linear = goalInBase.getOrigin();
     bool reverseWithoutTurning =
-        (reverseWithoutTurningThreshold < linear.length() && linear.x() < 0.0);
+        (reverseWithoutTurningThreshold > linear.length() && linear.x() < 0.0);
 
     // Initial rotation to face goal
     for (int i=0; i<rotationAttempts; i++) {
