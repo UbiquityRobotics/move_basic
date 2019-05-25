@@ -122,13 +122,18 @@ public:
    void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg);
 
    // return distance in meters to closest obstacle
-   float obstacle_dist(bool forward);
+   float obstacle_dist(bool forward, float &left_dist, float &right_dist,
+                       tf2::Vector3 &fl, tf2::Vector3 &fr);
 
    // return distance in radians to closest obstacle
    float obstacle_angle(bool left);
 
    // for testing
    void add_test_point(tf2::Vector3 p);
+
+   double min_side_dist;
+   double max_side_dist;
+
    void clear_test_points();
 };
 
