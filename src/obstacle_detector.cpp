@@ -113,6 +113,7 @@ void ObstacleDetector::range_callback(const sensor_msgs::Range::ConstPtr &msg)
     ROS_DEBUG("Callback %s %f", frame.c_str(), msg->range);
 
     obstacle_mutex.lock();
+    stamp = msg->header.stamp;
 
     // create sensor object if this is a new sensor
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);

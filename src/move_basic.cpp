@@ -713,8 +713,11 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
     // For lateral control
     double lateralIntegral = 0.0;
-    double lateralPrevError = 0.0;
     double lateralError = 0.0;
+    double prevLateralError = 0.0;
+    double lateralDiff = 0.0;
+    ros::Time sensorTime;
+
     bool hasWall = true;
 
     while (!done && ros::ok()) {
@@ -835,8 +838,13 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
 
-        lateralPrevError = lateralError;
-        double lateralDiff = lateralError - lateralPrevError;
+        ros::Time t = obstacle_detector->stamp;
+        if (t != sensorTime || followMode==DRIVE_STRAIGHT) {
+            lateralDiff = lateralError - prevLateralError;
+            prevLateralError = lateralError;
+            sensorTime = t;
+        }
+
         lateralIntegral += lateralError;
 
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +

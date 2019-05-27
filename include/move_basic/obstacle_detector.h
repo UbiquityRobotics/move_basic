@@ -117,6 +117,8 @@ class ObstacleDetector
    float degrees(float radians) const;
 
 public:
+   ros::Time stamp;
+
    ObstacleDetector(ros::NodeHandle& nh, tf2_ros::Buffer *tf_buffer);
    void range_callback(const sensor_msgs::Range::ConstPtr &msg);
    void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg);
