@@ -133,7 +133,7 @@ void ObstacleDetector::range_callback(const sensor_msgs::Range::ConstPtr &msg)
             geometry_msgs::PointStamped base_origin;
             tf2::doTransform(sensor_origin, base_origin, sensor_to_base_tf);
             fromMsg(base_origin.point, origin);
-            ROS_INFO("origin %f %f %f", origin.x(), origin.y(), origin.z());
+            ROS_INFO("Obstacle: origin %f %f %f", origin.x(), origin.y(), origin.z());
 
             // vectors at the edges of cone when cone height is 1m
             double theta = msg->field_of_view / 2.0;
