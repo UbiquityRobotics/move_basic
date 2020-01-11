@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 """
-Copyright (c) 2019, Ubiquity Robotics
+Copyright (c) 2020, Ubiquity Robotics
 All rights reserved.
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -26,7 +26,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 """
-Example client program for sending multiple move_basic commands in a sequence
+Example client program for sending multiple move_basic commands
 """
 
 import rospy
@@ -49,8 +49,8 @@ def printUsage():
     print "-h --help       - This help menu"
     print "-w --waypoints  - Select a waypoint list by name as below"
     print "                  line         A line to go back and fourth upon"
-    print "                  octogon      An octogon pattern"
-    print "                  figure8      A figure 8 dual octogon"
+    print "                  octagon      An octagon pattern"
+    print "                  figure8      A figure 8 dual octagon"
     print "-s --scale      - A different scale for the pattern "
     print "-x --offsetX    - An offset for X map placement of the pattern" 
     print "-y --offsetY    - An offset for Y map placement of the pattern" 
@@ -59,13 +59,16 @@ def printUsage():
 class Controller:
 
 
-    # Define a list of waypoints in terms of X,Y values in meters and robot angular yaw pose
+    # Define lists of waypoints in terms of X,Y values in meters and robot angular yaw pose
+
+    # A simple line of one meter length
     figureLine = [\
        [ 0.00,  0.00,  0.000, "MOVE: Leg A" ], \
-       [ 0.50,  0.00,  0.000, "MOVE: Leg B" ] \
+       [ 1.00,  0.00,  0.000, "MOVE: Leg B" ] \
        ]
 
-    figureOctogon = [\
+    # An octagon pattern which is a simplified way to do a circle type of pattern
+    figureOctagon = [\
        [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
        [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
        [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
@@ -76,42 +79,8 @@ class Controller:
        [ 0.20,  0.30,  0.785, "Move: Leg H" ] \
        ]
 
-    #  Must fix so reversals use different poses to match needs of backwards
-    figureOctogonReversal = [\
-       [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
-       [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
-       [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
-       [ 0.40, -0.30, -2.356, "MOVE: Leg D" ], \
-       [ 0.20, -0.30, -3.141, "Move: Leg E" ], \
-       [ 0.00, -0.10,  2.356, "Move: Leg F" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg G" ], \
-       [ 0.20,  0.30,  0.785, "Move: Leg H" ], \
-       [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
-       [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
-       [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
-       [ 0.40, -0.30, -2.356, "MOVE: Leg D" ], \
-       [ 0.20, -0.30, -3.141, "Move: Leg E" ], \
-       [ 0.00, -0.10,  2.356, "Move: Leg F" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg G" ], \
-       [ 0.20,  0.30,  0.785, "Move: Leg H" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg G" ], \
-       [ 0.00, -0.10,  2.356, "Move: Leg F" ], \
-       [ 0.20, -0.30, -3.141, "Move: Leg E" ], \
-       [ 0.40, -0.30, -2.356, "MOVE: Leg D" ], \
-       [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
-       [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
-       [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
-       [ 0.20,  0.30,  0.785, "Move: Leg H" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg G" ], \
-       [ 0.00, -0.10,  2.356, "Move: Leg F" ], \
-       [ 0.20, -0.30, -3.141, "Move: Leg E" ], \
-       [ 0.40, -0.30, -2.356, "MOVE: Leg D" ], \
-       [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
-       [ 0.60,  0.10, -0.785, "MOVE: Leg B" ]  \
-       ]
-
-
-    figure8octogon = [\
+    # Two octagon connected on one edge for a figure 8
+    figure8octagon = [\
        [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
        [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
        [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
@@ -142,29 +111,25 @@ class Controller:
        # Time per loop for the main control
        self.loop_msec = 50
 
+       # Define waitAtEachVertex as 0 for continual moves or 1 for pause each vertex
        waitAtEachVertex = 1
 
-       waypointName = 'octogon'
-       waypointList = self.figureOctogon
-       scaleX  = 1.3
-       scaleY  = 1.2
-       offsetX = -0.0
-       offsetY = 0.10
+       waypointName = 'line'
+       waypointList = self.figureLine
+       scaleX  = 1.0
+       scaleY  = 1.0
+       offsetX = 0.0
+       offsetY = 0.0
 
        # Suggested scale factors that can be used to scale x and y waypoint values
-       # Icuro large octogon
+
+       # 3 meter large octagon
        #scaleX = 5.0
        #scaleY = 5.0
        #offsetX = 0.0
        #offsetY = 1.5
      
-       # Marks Garage line
-       #scaleX  = 3.0
-       #scaleY  = 1.0
-       #offsetX = -1.0
-       #offsetY = 0.10
-
-       # Marks Garage fig 8 or octogon
+       # small fig 8 or octagon
        #scaleX  = 1.3
        #scaleY  = 1.2
        #offsetX = -0.0
@@ -193,9 +158,9 @@ class Controller:
                if (a == "line"):
                    waypointList = self.figureLine
                elif (a == "figure8"):
-                   waypointList = self.figure8octogon
-               elif (a == "octogon"):
-                   waypointList = self.figureOctogon
+                   waypointList = self.figure8octagon
+               elif (a == "octagon"):
+                   waypointList = self.figureOctagon
                else:
                    print ("Invalid choice of waypoint list")
                    sys.exit(2)
