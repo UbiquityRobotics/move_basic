@@ -47,8 +47,10 @@ import time
 
 def printUsage():
     print "-h --help       - This help menu"
+    print "-c --continue   - Continuous operation, no prompts to continue"
     print "-w --waypoints  - Select a waypoint list by name as below"
-    print "                  line         A line to go back and fourth upon"
+    print "                  line         A simple line"
+    print "                  box          A square box"
     print "                  octagon      An octagon pattern"
     print "                  figure8      A figure 8 dual octagon"
     print "-s --scale      - A different scale for the pattern "
@@ -59,12 +61,26 @@ def printUsage():
 class Controller:
 
 
+    #######################################################################################
     # Define lists of waypoints in terms of X,Y values in meters and robot angular yaw pose
+    # The entries on each waypoint are as follows:
+    #   1) X coordinate in the map in meters
+    #   2) Y coordinate in the map in meters
+    #   3) Angle in radians that the robot assumes once at X,Y
+    #   4) A simple text comment
 
     # A simple line of one meter length
     figureLine = [\
        [ 0.00,  0.00,  0.000, "MOVE: Leg A" ], \
-       [ 1.00,  0.00,  0.000, "MOVE: Leg B" ] \
+       [ 0.50,  0.00,  0.000, "MOVE: Leg B" ] \
+       ]
+
+    # A box pattern
+    figureBox = [\
+       [ 0.00,  0.00,  0.000, "MOVE: Leg A" ], \
+       [ 0.50,  0.00,  1.570, "MOVE: Leg B" ], \
+       [ 0.50,  0.50,  3.140, "MOVE: Leg C" ], \
+       [ 0.00,  0.50, -1.570, "MOVE: Leg D" ] \
        ]
 
     # An octagon pattern which is a simplified way to do a circle type of pattern
@@ -100,6 +116,7 @@ class Controller:
        ]
 
 
+    #######################################################################################
 
     """
     Constructor for our class
@@ -121,28 +138,14 @@ class Controller:
        offsetX = 0.0
        offsetY = 0.0
 
-       # Suggested scale factors that can be used to scale x and y waypoint values
-
-       # 3 meter large octagon
-       #scaleX = 5.0
-       #scaleY = 5.0
-       #offsetX = 0.0
-       #offsetY = 1.5
-     
-       # small fig 8 or octagon
-       #scaleX  = 1.3
-       #scaleY  = 1.2
-       #offsetX = -0.0
-       #offsetY = 0.10
-
-
        # read commandline arguments and place them in array
        # Only the -w option seems to work, something is wrong with getopt usage here
        try:
-           opts, args = getopt.getopt(sys.argv[1:], 'hw:s:x:y:h', ['help','waypoints=','scale=','offsetX=','offsetY='])
+           opts, args = getopt.getopt(sys.argv[1:], 'hcw:s:x:y:h', \
+               ['help','continue', 'waypoints=','scale=','offsetX=','offsetY='])
        except getopt.GetoptError as err:
-           # print help information and exit:
-           print "Error in recognized options"  # will print something like "option -a not recognized"
+           # will print something like "option -a not recognized"
+           print "Error in recognized options"  
            printUsage()
            sys.exit(2)
 
@@ -152,11 +155,16 @@ class Controller:
                print ("displaying help")
                printUsage()
                sys.exit(2)
+           elif o in ("-c", "--continue"):
+               # continuous operation, do not require ENTER at each vertex
+               waitAtEachVertex = 0
            elif o in ("-w", "--waypoints"):
                # define a waypoint list for waypoints
                waypointName = a
                if (a == "line"):
                    waypointList = self.figureLine
+               elif (a == "box"):
+                   waypointList = self.figureBox
                elif (a == "figure8"):
                    waypointList = self.figure8octagon
                elif (a == "octagon"):
@@ -173,7 +181,8 @@ class Controller:
            elif o in ("-y", "--offsetY"):
                offsetY = float(a)
 
-       print ("WaypointsName: %s scaleX %f scaleY %f offsetX %f offsetY %f" %(waypointName,scaleX,scaleY,offsetX,offsetY))
+       print ("WaypointsName: %s scaleX %f scaleY %f offsetX %f offsetY %f" \
+             %(waypointName,scaleX,scaleY,offsetX,offsetY))
 
        print "A total of %d waypoints is in the list " % (len(waypointList))
 
@@ -185,13 +194,16 @@ class Controller:
                x = (x * scaleX) + offsetX
                y = (y * scaleY) + offsetY
                now = rospy.get_rostime()
-               print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  will be published now" % (now.secs,now.nsecs,comment,x, y, yaw)
+               print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  will be published now" \
+                     % (now.secs,now.nsecs,comment,x, y, yaw)
 
                # now publish the waypoint
                moveResult = self.publishMoveBaseGoalWaitForReply( x,  y, yaw, comment)
                if moveResult == True:
-                   print "ERROR RETURN FROM MoveBasic! for Waypoint: X %f Y %f yaw %f " % (x, y, yaw)
-               print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  has been reached" % (now.secs,now.nsecs,comment,x, y, yaw)
+                   print "ERROR: MoveBasic Bad Status! for Waypoint: X %f Y %f yaw %f " % (x, y, yaw)
+               else:
+                   print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  has been reached" \
+                         % (now.secs,now.nsecs,comment,x, y, yaw)
 
                # optionally wait at each vertex before going to next one
                if (waitAtEachVertex == 1):
@@ -200,11 +212,15 @@ class Controller:
 
 
     # A publisher for sending commands to the follower node
-    # self.moveBaseGoalPub = rospy.Publisher("/move_base/goal", move_base_msgs/MoveBaseActionGoal, queue_size=1)
-    # For fiducial nav use frame_id of  "map"   for odom nav use frame_id of "odom"
+    # self.moveBaseGoalPub = rospy.Publisher("/move_base/goal", \
+    #     move_base_msgs/MoveBaseActionGoal, queue_size=1)
+
+    # Publish the desired waypoint to navigate on top of now
+    # For fiducial nav use frame_id of  "map"  
+    # For odom nav use frame_id of "odom"
     def publishMoveBaseGoalWaitForReply(self, x, y, yaw, comment):
         goal = MoveBaseGoal()
-        goal.target_pose.header.frame_id = "map"
+        goal.target_pose.header.frame_id = "map"     
         goal.target_pose.header.stamp = rospy.Time.now()
         goal.target_pose.pose.position.x = x 
         goal.target_pose.pose.position.y = y 
@@ -216,7 +232,8 @@ class Controller:
         goal.target_pose.pose.orientation.z = z
         goal.target_pose.pose.orientation.w = w
         now = rospy.get_rostime()
-        print "[%i.%i]  PubMove:  %s x,y,z,w of %f %f %f %f yaw %f" % (now.secs,now.nsecs,comment,x,y,z,w,yaw)
+        print "[%i.%i]  PubMove:  %s x,y,z,w of %f %f %f %f yaw %f" \
+              % (now.secs,now.nsecs,comment,x,y,z,w,yaw)
 
         client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         client.wait_for_server()
