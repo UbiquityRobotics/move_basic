@@ -45,21 +45,22 @@ import tf
 import traceback
 import time
 
+
+
 def printUsage():
-    print "-h --help       - This help menu"
-    print "-c --continue   - Continuous operation, no prompts to continue"
-    print "-w --waypoints  - Select a waypoint list by name as below"
-    print "                  line         A simple line"
-    print "                  box          A square box"
-    print "                  octagon      An octagon pattern"
-    print "                  figure8      A figure 8 dual octagon"
-    print "-s --scale      - A different scale for the pattern "
-    print "-x --offsetX    - An offset for X map placement of the pattern" 
-    print "-y --offsetY    - An offset for Y map placement of the pattern" 
+    print """-h --help       - This help menu
+    -c --continue   - Continuous operation, no prompts to continue
+    -w --waypoints  - Select a waypoint list by name as below
+                      line         A simple line
+                      box          A square box
+                      octagon      An octagon pattern
+                      figure8      A figure 8 dual octagon
+    -s --scale      - A different scale for the pattern 
+    -x --offsetX    - An offset for X map placement of the pattern 
+    -y --offsetY    - An offset for Y map placement of the pattern """
 
 
 class Controller:
-
 
     #######################################################################################
     # Define lists of waypoints in terms of X,Y values in meters and robot angular yaw pose
@@ -70,50 +71,51 @@ class Controller:
     #   4) A simple text comment
 
     # A simple line of one meter length
-    figureLine = [\
-       [ 0.00,  0.00,  0.000, "MOVE: Leg A" ], \
-       [ 0.50,  0.00,  0.000, "MOVE: Leg B" ] \
-       ]
+    figureLine = [
+    [ 0.00,  0.00,  0.000, "MOVE: Leg A" ],
+    [ 0.50,  0.00,  0.000, "MOVE: Leg B" ]
+    ]
 
     # A box pattern
-    figureBox = [\
-       [ 0.00,  0.00,  0.000, "MOVE: Leg A" ], \
-       [ 0.50,  0.00,  1.570, "MOVE: Leg B" ], \
-       [ 0.50,  0.50,  3.140, "MOVE: Leg C" ], \
-       [ 0.00,  0.50, -1.570, "MOVE: Leg D" ] \
-       ]
+    figureBox = [
+    [ 0.00,  0.00,  0.000, "MOVE: Leg A" ],
+    [ 0.50,  0.00,  1.570, "MOVE: Leg B" ],
+    [ 0.50,  0.50,  3.140, "MOVE: Leg C" ],
+    [ 0.00,  0.50, -1.570, "MOVE: Leg D" ]
+    ]
+
 
     # An octagon pattern which is a simplified way to do a circle type of pattern
-    figureOctagon = [\
-       [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
-       [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
-       [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
-       [ 0.40, -0.30, -2.356, "MOVE: Leg D" ], \
-       [ 0.20, -0.30, -3.141, "Move: Leg E" ], \
-       [ 0.00, -0.10,  2.356, "Move: Leg F" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg G" ], \
-       [ 0.20,  0.30,  0.785, "Move: Leg H" ] \
-       ]
+    figureOctagon = [
+    [ 0.40,  0.30,  0.000, "MOVE: Leg A" ],
+    [ 0.60,  0.10, -0.785, "MOVE: Leg B" ],
+    [ 0.60, -0.10, -1.571, "MOVE: Leg C" ],
+    [ 0.40, -0.30, -2.356, "MOVE: Leg D" ],
+    [ 0.20, -0.30, -3.141, "Move: Leg E" ],
+    [ 0.00, -0.10,  2.356, "Move: Leg F" ],
+    [ 0.00,  0.10,  1.571, "Move: Leg G" ],
+    [ 0.20,  0.30,  0.785, "Move: Leg H" ] 
+    ]
 
     # Two octagon connected on one edge for a figure 8
-    figure8octagon = [\
-       [ 0.40,  0.30,  0.000, "MOVE: Leg A" ], \
-       [ 0.60,  0.10, -0.785, "MOVE: Leg B" ], \
-       [ 0.60, -0.10, -1.571, "MOVE: Leg C" ], \
-       [ 0.40, -0.30, -2.356, "MOVE: Leg D" ], \
-       [ 0.20, -0.30, -3.141, "Move: Leg E" ], \
-       [ 0.00, -0.10,  2.356, "Move: Leg F" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg G" ], \
-       [-0.20,  0.30,  2.356, "Move: Leg H" ], \
-       [-0.40,  0.30,  3.141, "Move: Leg I" ], \
-       [-0.60,  0.10, -2.356, "Move: Leg J" ], \
-       [-0.60, -0.10, -1.571, "Move: Leg K" ], \
-       [-0.40, -0.30, -0.785, "Move: Leg L" ], \
-       [-0.20, -0.30,  0.000, "Move: Leg M" ], \
-       [ 0.00, -0.10,  0.785, "Move: Leg N" ], \
-       [ 0.00,  0.10,  1.571, "Move: Leg O" ], \
-       [ 0.20,  0.30,  0.785, "Move: Leg P" ]  \
-       ]
+    figure8octagon = [
+    [ 0.40,  0.30,  0.000, "MOVE: Leg A" ],
+    [ 0.60,  0.10, -0.785, "MOVE: Leg B" ],
+    [ 0.60, -0.10, -1.571, "MOVE: Leg C" ],
+    [ 0.40, -0.30, -2.356, "MOVE: Leg D" ],
+    [ 0.20, -0.30, -3.141, "Move: Leg E" ],
+    [ 0.00, -0.10,  2.356, "Move: Leg F" ],
+    [ 0.00,  0.10,  1.571, "Move: Leg G" ],
+    [-0.20,  0.30,  2.356, "Move: Leg H" ],
+    [-0.40,  0.30,  3.141, "Move: Leg I" ],
+    [-0.60,  0.10, -2.356, "Move: Leg J" ],
+    [-0.60, -0.10, -1.571, "Move: Leg K" ],
+    [-0.40, -0.30, -0.785, "Move: Leg L" ],
+    [-0.20, -0.30,  0.000, "Move: Leg M" ],
+    [ 0.00, -0.10,  0.785, "Move: Leg N" ],
+    [ 0.00,  0.10,  1.571, "Move: Leg O" ],
+    [ 0.20,  0.30,  0.785, "Move: Leg P" ] 
+    ]
 
 
     #######################################################################################
@@ -129,14 +131,13 @@ class Controller:
        self.loop_msec = 50
 
        # Define waitAtEachVertex as 0 for continual moves or 1 for pause each vertex
-       waitAtEachVertex = 1
+       self.waitAtEachVertex = 1
 
-       waypointName = 'line'
-       waypointList = self.figureLine
-       scaleX  = 1.0
-       scaleY  = 1.0
-       offsetX = 0.0
-       offsetY = 0.0
+       self.waypointName = 'line'
+       self.scaleX  = 1.0
+       self.scaleY  = 1.0
+       self.offsetX = 0.0
+       self.offsetY = 0.0
 
        # read commandline arguments and place them in array
        # Only the -w option seems to work, something is wrong with getopt usage here
@@ -157,7 +158,7 @@ class Controller:
                sys.exit(2)
            elif o in ("-c", "--continue"):
                # continuous operation, do not require ENTER at each vertex
-               waitAtEachVertex = 0
+               self.waitAtEachVertex = 0
            elif o in ("-w", "--waypoints"):
                # define a waypoint list for waypoints
                waypointName = a
@@ -174,41 +175,17 @@ class Controller:
                    sys.exit(2)
                print "Waypoint list will be '%s'", waypointList
            elif o in ("-s", "--scaleX"):
-               scaleX = float(a)
-               scaleY = float(a)
+               self.scaleX = float(a)
+               self.scaleY = float(a)
            elif o in ("-x", "--offsetX"):
-               offsetX = float(a)
+               self.offsetX = float(a)
            elif o in ("-y", "--offsetY"):
-               offsetY = float(a)
+               self.offsetY = float(a)
 
        print ("WaypointsName: %s scaleX %f scaleY %f offsetX %f offsetY %f" \
-             %(waypointName,scaleX,scaleY,offsetX,offsetY))
+             %(self.waypointName,self.scaleX,self.scaleY,self.offsetX,self.offsetY))
 
        print "A total of %d waypoints is in the list " % (len(waypointList))
-
-       # continue going through waypoints over and over.
-       # If you only want to do list once exit after first for loop
-       while (True):
-           for waypoint in waypointList:
-               x,y,yaw,comment = waypoint
-               x = (x * scaleX) + offsetX
-               y = (y * scaleY) + offsetY
-               now = rospy.get_rostime()
-               print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  will be published now" \
-                     % (now.secs,now.nsecs,comment,x, y, yaw)
-
-               # now publish the waypoint
-               moveResult = self.publishMoveBaseGoalWaitForReply( x,  y, yaw, comment)
-               if moveResult == True:
-                   print "ERROR: MoveBasic Bad Status! for Waypoint: X %f Y %f yaw %f " % (x, y, yaw)
-               else:
-                   print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  has been reached" \
-                         % (now.secs,now.nsecs,comment,x, y, yaw)
-
-               # optionally wait at each vertex before going to next one
-               if (waitAtEachVertex == 1):
-                   raw_input("Hit ENTER to go to next waypoint ... ")
-
 
 
     # A publisher for sending commands to the follower node
@@ -256,10 +233,32 @@ class Controller:
     Main loop
     """
     def run(self):
+
        print "ROS publisher publishing goals to move basic"
+       waypointList = self.figureLine
 
-       print "Goals sent "
+       # continue going through waypoints over and over.
+       # If you only want to do list once exit after first for loop
+       while (True):
+           for waypoint in waypointList:
+               x,y,yaw,comment = waypoint
+               x = (x * self.scaleX) + self.offsetX
+               y = (y * self.scaleY) + self.offsetY
+               now = rospy.get_rostime()
+               print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  will be published now" \
+                     % (now.secs,now.nsecs,comment,x, y, yaw)
 
+               # now publish the waypoint
+               moveResult = self.publishMoveBaseGoalWaitForReply( x,  y, yaw, comment)
+               if moveResult == True:
+                   print "ERROR: MoveBasic Bad Status! for Waypoint: X %f Y %f yaw %f " % (x, y, yaw)
+               else:
+                   print "[%i.%i]  Waypoint: %s X %f Y %f yaw %f  has been reached" \
+                         % (now.secs,now.nsecs,comment,x, y, yaw)
+
+               # optionally wait at each vertex before going to next one
+               if (self.waitAtEachVertex == 1):
+                   raw_input("Hit ENTER to go to next waypoint ... ")
 
 if __name__ == "__main__":
     # Create an instance of our goal class
