@@ -30,6 +30,8 @@ New parameters:
 
 `~smooth_follow`: (bool) Toggle preserving velocity when rotating towards a new goal for smooth cornering. May be a bit less accurate, but a lot easier on the wheels.  Default False.
 
+`~forward_obstacle_threshold`: (float) Velocity multiplier for stopping when an obstacle is detected. Higher values should result in earlier braking. Default 1.5.
+
 
 ## New obstacle avoidance behavoir (March 2019)
 

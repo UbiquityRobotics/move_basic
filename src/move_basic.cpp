@@ -111,6 +111,8 @@ class MoveBasic {
 
     volatile int followMode;
 
+    double forwardObstacleThreshold;
+
     double minSideDist;
     double maxSideDist;
     double maxLateralDev;
@@ -253,6 +255,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
     nh.param<int>("rotation_attempts", rotationAttempts, 1);
+
+    // if distance < velocity times this we stop
+    nh.param<double>("forward_obstacle_threshold", forwardObstacleThreshold, 1.5);
 
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
@@ -688,11 +693,16 @@ bool MoveBasic::rotate(double yaw, std::string drivingFrame)
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
         }
 
-        // apply linear velocity for smooth slowdown
-        if(smoothFollow) {
-            prevSmoothVelocity -= 0.007;
-            if (prevSmoothVelocity < 0){
+        // apply linear velocity for smooth slowdown and stop instantly if there's an obstacle
+        if (smoothFollow) {
+
+            if (forwardObstacleDist <= prevSmoothVelocity * forwardObstacleThreshold) {
                 prevSmoothVelocity = 0;
+            } else {
+                prevSmoothVelocity -= 0.007;
+                if (prevSmoothVelocity < 0) {
+                    prevSmoothVelocity = 0;
+                }
             }
             sendCmd(velocity, prevSmoothVelocity);
         }
@@ -712,8 +722,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
     ros::Rate r(50);
 
     bool waitingForObstacle = false;
-    int  waitingLoops = 0;
-    double forwardObstacleThreshold = 1.5;  // if distance <  velocity times this we stop
+    int  waitingLoops = 0; 
     ros::Time obstacleTime;
 
     tf2::Transform poseDrivingInitial;
