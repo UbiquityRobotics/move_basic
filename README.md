@@ -26,6 +26,11 @@ To run, give the following command:
 
 Please refer to [the move_basic wiki page](http://wiki.ros.org/move_basic) for node documentation.
 
+New parameters:
+
+`~smooth_follow`: (bool) Toggle preserving velocity when rotating towards a new goal for smooth cornering. May be a bit less accurate, but a lot easier on the wheels.  Default False.
+
+
 ## New obstacle avoidance behavoir (March 2019)
 
 New behavior was added in the `side_dist` branch.  The behavior is to

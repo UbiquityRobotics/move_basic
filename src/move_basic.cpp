@@ -75,7 +75,10 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
-    bool   verboseInfo;
+    bool verboseInfo;
+    bool smoothFollow;
+
+    double prevSmoothVelocity;
 
     double maxAngularVelocity;
     double minAngularVelocity;
@@ -268,7 +271,11 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
                           alternateDrivingFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_link");
 
-     nh.param<bool>("verbose_info", verboseInfo, false);
+    nh.param<bool>("verbose_info", verboseInfo, false);
+
+    nh.param<bool>("smooth_follow", smoothFollow, false);
+
+    prevSmoothVelocity = 0;
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
@@ -680,7 +687,18 @@ bool MoveBasic::rotate(double yaw, std::string drivingFrame)
             done = true;
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
         }
-        sendCmd(velocity, 0);
+
+        // apply linear velocity for smooth slowdown
+        if(smoothFollow) {
+            prevSmoothVelocity -= 0.007;
+            if (prevSmoothVelocity < 0){
+                prevSmoothVelocity = 0;
+            }
+            sendCmd(velocity, prevSmoothVelocity);
+        }
+        else {
+            sendCmd(velocity, 0);
+        }        
     }
     return done;
 }
@@ -936,7 +954,10 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         if (actionServer->isNewGoalAvailable()) {
             ROS_INFO("MoveBasic: Stopping rotation due to new goal");
             done = true;
-            velocity = 0;
+
+            if (!smoothFollow) {
+                velocity = 0;
+            }
         }
 
         // TODO: is this the best test of completeness?
@@ -949,6 +970,12 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         if (!forward) {
             velocity = -velocity;
         }
+
+        // record linear velocity for smooth slowdown
+        if (smoothFollow) {
+            prevSmoothVelocity = velocity;
+        }
+
         sendCmd(rotation, velMult * velocity);
     }
     return done;
