@@ -78,6 +78,8 @@ class MoveBasic {
     bool verboseInfo;
     bool smoothFollow;
 
+    double smoothBreakingMin;
+    double smoothBreakingMax; 
     double prevSmoothVelocity;
 
     double maxAngularVelocity;
@@ -279,6 +281,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
     nh.param<bool>("verbose_info", verboseInfo, false);
 
     nh.param<bool>("smooth_follow", smoothFollow, false);
+    nh.param<double>("smooth_breaking_min", smoothBreakingMin, 0.005);
+    nh.param<double>("smooth_breaking_max", smoothBreakingMax, 0.0075);
 
     prevSmoothVelocity = 0;
 
@@ -699,7 +703,8 @@ bool MoveBasic::rotate(double yaw, std::string drivingFrame)
             if (forwardObstacleDist <= prevSmoothVelocity * forwardObstacleThreshold) {
                 prevSmoothVelocity = 0;
             } else {
-                prevSmoothVelocity -= 0.007;
+                double factor = std::min(std::abs(yaw)/2.0,1.0);
+                prevSmoothVelocity -= smoothBreakingMin + (smoothBreakingMax - smoothBreakingMin) * factor;
                 if (prevSmoothVelocity < 0) {
                     prevSmoothVelocity = 0;
                 }
