@@ -75,8 +75,6 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
-    bool   verboseInfo;
-
     double maxAngularVelocity;
     double minAngularVelocity;
     double angularAcceleration;
@@ -272,8 +270,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<std::string>("alternate_driving_frame",
                           alternateDrivingFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_footprint");
-
-     nh.param<bool>("verbose_info", verboseInfo, false);
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
@@ -544,7 +540,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             }
             tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
                                          poseFrameId.getOrigin();
-            printf("MoveBasic: Travelled %f %f\n", distTravelled.x(), distTravelled.y());
+            ROS_DEBUG("MoveBasic: Travelled %f %f\n", distTravelled.x(), distTravelled.y());
         }
 
         sleep(localizationLatency);
@@ -572,7 +568,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
         tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
                                      poseFrameId.getOrigin();
-        printf("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
+        ROS_DEBUG("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
     }
 */
 
@@ -652,10 +648,6 @@ bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
         tf2::Transform goalInDriving;
         if (getTransform(planningFrame, drivingFrame, T_planning_driving)) {
             goalInDriving = T_planning_driving * goalInPlanning;
-            if (verboseInfo) {
-                double gx, gy, gyaw;
-                getPose(goalInDriving, gx, gy, gyaw);
-            }
         }
 
         double x, y, currentYaw;
@@ -764,14 +756,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         tf2::Transform T_planning_driving;
         if (getTransform(planningFrame, drivingFrame, T_planning_driving)) {
             goalInDriving = T_planning_driving * goalInPlanning;
-            if (verboseInfo) {
-                double gx, gy, gyaw;
-                getPose(goalInDriving, gx, gy, gyaw);
-                printf("Updated goal %f %f %f\n", gx, gy, gyaw);
-            }
+            double gx, gy, gyaw;
+            getPose(goalInDriving, gx, gy, gyaw);
+            ROS_DEBUG("Updated goal %f %f %f\n", gx, gy, gyaw);
         }
-        else if (verboseInfo) {
-            printf("Could not update goal\n");
+        else {
+            ROS_DEBUG("Could not update goal\n");
         }
 
         if (!getTransform("odom", baseFrame, poseDriving)) {
@@ -802,12 +792,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             }
             if (minSideDist > 0 && leftObstacleDist < 1.0) {
                 if (leftObstacleDist < minSideDist) {
-                    printf("out ");
+                    ROS_DEBUG("out ");
                     lateralError = sideTurnOutWeight *
                         (leftObstacleDist - minSideDist);
                 }
                 else {
-                    printf("in ");
+                    ROS_DEBUG("in ");
                     lateralError = sideTurnInWeight *
                         (leftObstacleDist - minSideDist);
                 }
@@ -827,12 +817,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             }
             if (minSideDist > 0 && rightObstacleDist < 1.0) {
                 if (leftObstacleDist < minSideDist) {
-                    printf("out ");
+                    ROS_DEBUG("out ");
                     lateralError = sideTurnOutWeight *
                         (minSideDist - rightObstacleDist);
                 }
                 else {
-                    printf("in ");
+                    ROS_DEBUG("in ");
                     lateralError = sideTurnInWeight *
                         (minSideDist - rightObstacleDist);
                 }
@@ -902,24 +892,18 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         // Limit angular deviation from planned path to prevent turning around
         if (cyaw > maxAngularDev && rotation < 0) {
-            if (verboseInfo) {
-                printf("limit right\n");
-            }
+            ROS_DEBUG("limit right\n");
             rotation = 0;
         }
         else if (cyaw < -maxAngularDev && rotation > 0) {
-            if (verboseInfo) {
-                printf("limit left\n");
-            }
+            ROS_DEBUG("limit left\n");
             rotation = 0;
         }
 
-        if (verboseInfo) {
-            printf("MoveBasic: Debug F %f L %f, R %f %f %f %f %f %f\n",
-               forwardObstacleDist, leftObstacleDist, rightObstacleDist,
-               remaining.x(), remaining.y(), lateralError,
-               rotation, rad2deg(cyaw));
-        }
+        ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f %f\n",
+                  forwardObstacleDist, leftObstacleDist, rightObstacleDist,
+                  remaining.x(), remaining.y(), lateralError,
+                  rotation, rad2deg(cyaw));
 
         // Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
