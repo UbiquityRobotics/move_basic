@@ -643,13 +643,6 @@ bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
         ros::spinOnce();
         r.sleep();
 
-        // Try to update goal - see comment in moveLinear()
-        tf2::Transform T_planning_driving;
-        tf2::Transform goalInDriving;
-        if (getTransform(planningFrame, drivingFrame, T_planning_driving)) {
-            goalInDriving = T_planning_driving * goalInPlanning;
-        }
-
         double x, y, currentYaw;
         tf2::Transform poseDriving;
         if (!getTransform(baseFrame, drivingFrame, poseDriving)) {
