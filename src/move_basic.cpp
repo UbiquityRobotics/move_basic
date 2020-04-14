@@ -264,7 +264,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                       reverseWithoutTurningThreshold, 0.5);
 
     nh.param<std::string>("preferred_planning_frame",
-                          preferredPlanningFrame, "goal");
+                          preferredPlanningFrame, "");
     nh.param<std::string>("alternate_planning_frame",
                           alternatePlanningFrame, "odom");
     nh.param<std::string>("preferred_driving_frame",
@@ -413,8 +413,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // The pose of the robot planning frame MUST be known initially, and may or may not
     // be known after that.
     // The pose of the robot in the driving frame MUST be known at all times.
-    // A planning frame of "goal" means to use what ever frame the goal is specified in.
-    if (preferredPlanningFrame == "goal") {
+    // An empty planning frame means to use what ever frame the goal is specified in.
+    if (preferredPlanningFrame == "") {
        planningFrame = frameId;
        goalInPlanning = goal;
        ROS_INFO("Planning in goal frame: %s\n", planningFrame.c_str());
