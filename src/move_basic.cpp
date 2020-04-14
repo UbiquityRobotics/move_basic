@@ -269,7 +269,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                           alternatePlanningFrame, "odom");
     nh.param<std::string>("preferred_driving_frame",
                           preferredDrivingFrame, "map");
-    nh.param<std::string>("alternate_planning_frame",
+    nh.param<std::string>("alternate_driving_frame",
                           alternateDrivingFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_footprint");
 
@@ -493,8 +493,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     tf2::Vector3 linear = goalInBase.getOrigin();
-    // Don't use linear.length() because z is not relevant
-    double dist = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
+    linear.setZ(0);
+    double dist = linear.length();
     bool reverseWithoutTurning =
         (reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
 
@@ -730,7 +730,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
     tf2::Vector3 linear = (poseDrivingInitial.getOrigin() -
                            goalInDriving.getOrigin());
-    double requestedDistance = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
+    linear.setZ(0);
+    double requestedDistance = linear.length();
 
     tf2::Transform poseDriving;
     if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
