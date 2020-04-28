@@ -75,8 +75,6 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
-    bool   verboseInfo;
-
     double maxAngularVelocity;
     double minAngularVelocity;
     double angularAcceleration;
@@ -142,9 +140,14 @@ class MoveBasic {
 
     void run();
 
-    bool moveLinear(const tf2::Transform& goalInDriving,
-                    std::string drivingFrame);
-    bool rotate(double requestedYaw, std::string drivingFrame);
+    bool moveLinear(tf2::Transform& goalInDriving,
+                    const std::string& planningFrame,
+                    const std::string& drivingFrame);
+    bool rotate(double requestedYaw,
+                const std::string& planningFrame,
+                const std::string& drivingFrame);
+
+    tf2::Transform goalInPlanning;
 };
 
 
@@ -199,7 +202,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 
 // Constructor
 
-MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
+MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                         listener(tfBuffer), followMode(DRIVE_STRAIGHT)
 {
     ros::NodeHandle nh("~");
@@ -259,16 +262,14 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(30.0)),
                       reverseWithoutTurningThreshold, 0.5);
 
     nh.param<std::string>("preferred_planning_frame",
-                          preferredPlanningFrame, "map");
+                          preferredPlanningFrame, "");
     nh.param<std::string>("alternate_planning_frame",
                           alternatePlanningFrame, "odom");
-    nh.param<std::string>("preferred_planning_frame",
+    nh.param<std::string>("preferred_driving_frame",
                           preferredDrivingFrame, "map");
-    nh.param<std::string>("alternate_planning_frame",
+    nh.param<std::string>("alternate_driving_frame",
                           alternateDrivingFrame, "odom");
-    nh.param<std::string>("base_frame", baseFrame, "base_link");
-
-     nh.param<bool>("verbose_info", verboseInfo, false);
+    nh.param<std::string>("base_frame", baseFrame, "base_footprint");
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
@@ -310,11 +311,9 @@ bool MoveBasic::getTransform(const std::string& from, const std::string& to,
         return true;
     }
     catch (tf2::TransformException &ex) {
-         ROS_WARN("%s", ex.what());
          return false;
     }
 }
-
 
 // Transform a pose from one frame to another
 
@@ -407,11 +406,19 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     std::string planningFrame;
     double goalYaw;
 
-    tf2::Transform goalPlanning;
-    if (!transformPose(frameId, preferredPlanningFrame, goal, goalPlanning)) {
-        ROS_WARN("MoveBasic: Will attempt to plan in %s frame", frameId.c_str());
+    // The pose of the robot planning frame MUST be known initially, and may or may not
+    // be known after that.
+    // The pose of the robot in the driving frame MUST be known at all times.
+    // An empty planning frame means to use what ever frame the goal is specified in.
+    if (preferredPlanningFrame == "") {
+       planningFrame = frameId;
+       goalInPlanning = goal;
+       ROS_INFO("Planning in goal frame: %s\n", planningFrame.c_str());
+    }
+    else if (!transformPose(frameId, preferredPlanningFrame, goal, goalInPlanning)) {
+        ROS_WARN("MoveBasic: Will attempt to plan in %s frame", alternatePlanningFrame.c_str());
         if (!transformPose(frameId, alternatePlanningFrame, goal,
-            goalPlanning)) {
+            goalInPlanning)) {
             abortGoal("MoveBasic: No localization available for planning");
             return;
         }
@@ -422,7 +429,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         planningFrame = preferredPlanningFrame;
     }
 
-    getPose(goalPlanning, x, y, goalYaw);
+    getPose(goalInPlanning, x, y, goalYaw);
     ROS_INFO("MoveBasic: Goal in %s  %f %f %f", planningFrame.c_str(),
              x, y, rad2deg(goalYaw));
 
@@ -453,8 +460,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     tf2::Transform currentDrivingBase;
     // Should be at time of goal message
     if (!getTransform(preferredDrivingFrame, baseFrame, currentDrivingBase)) {
-         ROS_WARN("MoveBasic: Attempting to drive using %s frame",
-                  alternateDrivingFrame.c_str());
+         ROS_WARN("MoveBasic: %s not available, attempting to drive using %s frame",
+                  preferredDrivingFrame.c_str(), alternateDrivingFrame.c_str());
          if (!getTransform(alternateDrivingFrame,
                            baseFrame, currentDrivingBase)) {
              abortGoal("MoveBasic: Cannot determine robot pose in driving frame");
@@ -465,19 +472,27 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
          }
     }
     else {
-         drivingFrame = preferredDrivingFrame;
+      drivingFrame = preferredDrivingFrame;
     }
 
     if (!transformPose(frameId, drivingFrame, goal, goalInDriving)) {
-         abortGoal("MoveBasic: Cannot determine robot pose in driving frame");
+         abortGoal("MoveBasic: Cannot determine goal pose in driving frame");
          return;
     }
 
     tf2::Transform goalInBase = currentDrivingBase * goalInDriving;
+    {
+       double x, y, yaw;
+       getPose(goalInBase, x, y, yaw);
+       ROS_INFO("MoveBasic: Goal in %s  %f %f %f", baseFrame.c_str(),
+             x, y, rad2deg(yaw));
+    }
 
     tf2::Vector3 linear = goalInBase.getOrigin();
+    linear.setZ(0);
+    double dist = linear.length();
     bool reverseWithoutTurning =
-        (reverseWithoutTurningThreshold > linear.length() && linear.x() < 0.0);
+        (reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
 
     // Initial rotation to face goal
     for (int i=0; i<rotationAttempts; i++) {
@@ -487,7 +502,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             return;
         }
 
-        if (linear.length() > linearTolerance) {
+        if (dist > linearTolerance) {
             double requestedYaw = atan2(linear.y(), linear.x());
             if (reverseWithoutTurning) {
                 if (requestedYaw > 0.0) {
@@ -501,29 +516,21 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             if (std::abs(requestedYaw) < angularTolerance) {
                 break;
             }
-            if (!rotate(requestedYaw, drivingFrame)) {
+            if (!rotate(requestedYaw, planningFrame, drivingFrame)) {
                 return;
             }
             sleep(localizationLatency);
         }
     }
 
-    // XXX bogus rotation to test linear recovery
-    // TODO: incorporate this into testing
-#ifdef TEST_PID
-    ROS_INFO("MoveBasic: TEST rotation of 45 degrees!");
-    rotate(deg2rad(45));
-#endif
-
     // Do linear portion of goal
-    double dist = linear.length();
     ROS_INFO("MoveBasic: Requested distance %f", dist);
 
     if (std::abs(dist) > linearTolerance) {
         if (reverseWithoutTurning) {
             dist = - dist;
         }
-        if (!moveLinear(goalInDriving, drivingFrame)) {
+        if (!moveLinear(goalInDriving, planningFrame, drivingFrame)) {
             return;
         }
         {
@@ -533,7 +540,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             }
             tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
                                          poseFrameId.getOrigin();
-            printf("MoveBasic: Travelled %f %f\n", distTravelled.x(), distTravelled.y());
+            ROS_DEBUG("MoveBasic: Travelled %f %f\n", distTravelled.x(), distTravelled.y());
         }
 
         sleep(localizationLatency);
@@ -548,7 +555,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     if (followMode==DRIVE_STRAIGHT) {
         getPose(finalPose, x, y, yaw);
-        rotate(goalYaw - yaw, drivingFrame);
+        rotate(goalYaw - yaw, planningFrame, drivingFrame);
     }
 
 /*
@@ -561,7 +568,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
         tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
                                      poseFrameId.getOrigin();
-        printf("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
+        ROS_DEBUG("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
     }
 */
 
@@ -610,7 +617,8 @@ void MoveBasic::run()
 
 // Rotate relative to current orientation
 
-bool MoveBasic::rotate(double yaw, std::string drivingFrame)
+bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
+                       const std::string& drivingFrame)
 {
     ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(yaw));
 
@@ -687,8 +695,9 @@ bool MoveBasic::rotate(double yaw, std::string drivingFrame)
 
 // Move forward specified distance
 
-bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
-                           std::string drivingFrame)
+bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
+                           const std::string& planningFrame,
+                           const std::string& drivingFrame)
 {
     bool done = false;
     ros::Rate r(50);
@@ -704,8 +713,10 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
          return false;
     }
 
-    double requestedDistance = (poseDrivingInitial.getOrigin() -
-                                goalInDriving.getOrigin()).length();
+    tf2::Vector3 linear = (poseDrivingInitial.getOrigin() -
+                           goalInDriving.getOrigin());
+    linear.setZ(0);
+    double requestedDistance = linear.length();
 
     tf2::Transform poseDriving;
     if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
@@ -715,7 +726,6 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
     tf2::Transform goalInBase = poseDriving * goalInDriving;
     tf2::Vector3 remaining = goalInBase.getOrigin();
-    printf("MoveBasic: remaining %f %f\n", remaining.x(), remaining.y());
     bool forward = (remaining.x() > 0);
 
     // For lateral control
@@ -731,22 +741,34 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
         ros::spinOnce();
         r.sleep();
 
-        if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
+        // Try to update the goal in the driving frame. This might not work,
+        // for example if it was based on a fiducial which was no longer
+        // visible. However, if the goal was based up a fiducial, then it
+        // is likley that the estimate of our position relative to it
+        // will improve as we get closer
+        tf2::Transform T_planning_driving;
+        if (getTransform(planningFrame, drivingFrame, T_planning_driving)) {
+            goalInDriving = T_planning_driving * goalInPlanning;
+            double gx, gy, gyaw;
+            getPose(goalInDriving, gx, gy, gyaw);
+            ROS_DEBUG("Updated goal %f %f %f\n", gx, gy, gyaw);
+        }
+        else {
+            ROS_DEBUG("Could not update goal\n");
+        }
+
+        if (!getTransform("odom", baseFrame, poseDriving)) {
              ROS_WARN("MoveBasic: Cannot determine robot pose for linear");
              continue;
         }
-
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
-        if (!forward) {
-           remaining = -remaining;
-        }
+        double distRemaining = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
 
         tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
         getPose(initialBaseToCurrent, cx, cy, cyaw);
 
-        double distRemaining = remaining.x();
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
         double firstDistWithoutWall = 0;
 
@@ -763,12 +785,12 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
             }
             if (minSideDist > 0 && leftObstacleDist < 1.0) {
                 if (leftObstacleDist < minSideDist) {
-                    printf("out ");
+                    ROS_DEBUG("out ");
                     lateralError = sideTurnOutWeight *
                         (leftObstacleDist - minSideDist);
                 }
                 else {
-                    printf("in ");
+                    ROS_DEBUG("in ");
                     lateralError = sideTurnInWeight *
                         (leftObstacleDist - minSideDist);
                 }
@@ -788,12 +810,12 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
             }
             if (minSideDist > 0 && rightObstacleDist < 1.0) {
                 if (leftObstacleDist < minSideDist) {
-                    printf("out ");
+                    ROS_DEBUG("out ");
                     lateralError = sideTurnOutWeight *
                         (minSideDist - rightObstacleDist);
                 }
                 else {
-                    printf("in ");
+                    ROS_DEBUG("in ");
                     lateralError = sideTurnInWeight *
                         (minSideDist - rightObstacleDist);
                 }
@@ -863,20 +885,18 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
 
         // Limit angular deviation from planned path to prevent turning around
         if (cyaw > maxAngularDev && rotation < 0) {
-            printf("limit right\n");
+            ROS_DEBUG("limit right\n");
             rotation = 0;
         }
         else if (cyaw < -maxAngularDev && rotation > 0) {
-            printf("limit left\n");
+            ROS_DEBUG("limit left\n");
             rotation = 0;
         }
 
-        if (verboseInfo) {
-            printf("MoveBasic: Debug F %f L %f, R %f %f %f %f %f %f\n",
-               forwardObstacleDist, leftObstacleDist, rightObstacleDist,
-               remaining.x(), remaining.y(), lateralError,
-               rotation, rad2deg(cyaw));
-        }
+        ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f %f\n",
+                  forwardObstacleDist, leftObstacleDist, rightObstacleDist,
+                  remaining.x(), remaining.y(), lateralError,
+                  rotation, rad2deg(cyaw));
 
         // Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
@@ -939,8 +959,7 @@ bool MoveBasic::moveLinear(const tf2::Transform& goalInDriving,
             velocity = 0;
         }
 
-        // TODO: is this the best test of completeness?
-        if (remaining.x() < linearTolerance) {
+        if (abs(remaining.x()) < linearTolerance) {
             velocity = 0;
             done = true;
             ROS_INFO("MoveBasic: Done linear, error %f, %f meters",
