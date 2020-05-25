@@ -32,7 +32,7 @@
 #include "move_basic/obstacle_points.h"
 #include <sensor_msgs/Range.h>
 
-ObstaclePoints::ObstaclePoints(ros::NodeHandle& nh) : tf_listener(tf_buffer) {
+ObstaclePoints::ObstaclePoints(ros::NodeHandle& nh, tf2_ros::Buffer& tf_buffer) : tf_buffer(tf_buffer) {
     sonar_sub = nh.subscribe("/sonars", 1,
         &ObstaclePoints::range_callback, this);
     scan_sub = nh.subscribe("/scan", 1,

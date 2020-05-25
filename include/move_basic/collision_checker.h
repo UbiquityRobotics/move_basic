@@ -73,7 +73,12 @@ class CollisionChecker
    float degrees(float radians) const;
 
 public:
+   // Note that we take in refrences to tf_buffer and op, we expect these to outlive 
+   // the useful life of this class, if they don't then you have a big issue.
+   //
+   // We don't store the NodeHandle, so that doesn't apply to it.
    CollisionChecker(ros::NodeHandle& nh, tf2_ros::Buffer& tf_buffer, ObstaclePoints& op);
+
    // return distance in meters to closest obstacle
    float obstacle_dist(bool forward, float &left_dist, float &right_dist,
                        tf2::Vector3 &fl, tf2::Vector3 &fr);

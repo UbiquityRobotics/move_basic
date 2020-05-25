@@ -87,8 +87,7 @@ private:
   std::map<std::string, RangeSensor> sensors;
   ros::Subscriber sonar_sub;
   ros::Subscriber scan_sub;
-  tf2_ros::Buffer tf_buffer;
-  tf2_ros::TransformListener tf_listener;
+  tf2_ros::Buffer& tf_buffer;
    
   bool have_lidar;
   tf2::Vector3 lidar_origin;
@@ -101,7 +100,7 @@ private:
   std::vector<tf2::Vector3> test_points;
 
 public:
-  ObstaclePoints(ros::NodeHandle& nh);
+  ObstaclePoints(ros::NodeHandle& nh, tf2_ros::Buffer& tf_buffer);
 
   void range_callback(const sensor_msgs::Range::ConstPtr &msg);
   void scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg);

@@ -270,7 +270,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
       "/move_base/goal", 1);
 
-    obstacle_points.reset(new ObstaclePoints(nh));
+    obstacle_points.reset(new ObstaclePoints(nh, tfBuffer));
     collision_checker.reset(new CollisionChecker(nh, tfBuffer, *obstacle_points));
 
     ROS_INFO("Move Basic ready");
