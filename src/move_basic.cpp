@@ -61,7 +61,6 @@ enum {
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
-    ros::Subscriber followSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -105,16 +104,10 @@ class MoveBasic {
     std::string alternateDrivingFrame;
     std::string baseFrame;
 
-    volatile int followMode;
-
     double minSideDist;
-    double maxSideDist;
     double maxLateralDev;
     double maxAngularDev;
-    double sideTurnOutWeight;
-    double sideTurnInWeight;
     double sideRecoverWeight;
-    double maxFollowDistWithoutWall;
 
     float forwardObstacleDist;
     float leftObstacleDist;
@@ -133,8 +126,6 @@ class MoveBasic {
                       tf2::Transform& tf);
     bool transformPose(const std::string& from, const std::string& to,
                        const tf2::Transform& in, tf2::Transform& out);
-
-    void followModeCallback(const move_basic::FollowMode::ConstPtr &msg);
 
   public:
     MoveBasic();
@@ -204,7 +195,7 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 // Constructor
 
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
-                        listener(tfBuffer), followMode(DRIVE_STRAIGHT)
+                        listener(tfBuffer)
 {
     ros::NodeHandle nh("~");
 
@@ -226,9 +217,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
 
-    // Maximum distance to side before deciding there is nothing to follow
-    nh.param<double>("max_side_dist", maxSideDist, 1.0);
-
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
 
@@ -238,17 +226,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Maximum angular velocity during linear portion
     nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
 
-    // Weighting of turning towards followed wall
-    nh.param<double>("side_turn_in_weight", sideTurnInWeight, 0.3);
-
-    // Weighting of turning away from followed wall
-    nh.param<double>("side_turn_out_weight", sideTurnOutWeight, 0.3);
-
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
-
-    // How long to drive in follow mode without a wall
-    nh.param<double>("max_follow_dist_without_wall", maxFollowDistWithoutWall, 0.5);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
@@ -279,9 +258,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/obstacle_distance", 1));
     errorPub =
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
-
-    followSub = nh.subscribe("/follow_mode", 1, &MoveBasic::followModeCallback,
-                             this);
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
@@ -330,22 +306,6 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     return true;
 }
 
-
-// Called when a follow mode message is received
-
-void MoveBasic::followModeCallback(const move_basic::FollowMode::ConstPtr &msg)
-{
-    followMode = msg->follow_mode;
-    ROS_INFO("MoveBasic: Received follow mode %d dist %f speed %f",
-             followMode, msg->follow_dist, msg->speed);
-
-    if (msg->follow_dist != 0) {
-        minSideDist = msg->follow_dist;
-    }
-    if (msg->speed != 0) {
-        maxLinearVelocity = msg->speed;
-    }
-}
 
 
 // Called when a simple goal message is received
@@ -555,10 +515,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
          return;
     }
 
-    if (followMode==DRIVE_STRAIGHT) {
-        getPose(finalPose, x, y, yaw);
-        rotate(goalYaw - yaw, planningFrame, drivingFrame);
-    }
+    getPose(finalPose, x, y, yaw);
+    rotate(goalYaw - yaw, planningFrame, drivingFrame);
 
 /*
     sleep(10);
@@ -737,8 +695,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     double lateralDiff = 0.0;
     ros::Time sensorTime;
 
-    bool hasWall = true;
-
     while (!done && ros::ok()) {
         ros::spinOnce();
         r.sleep();
@@ -772,63 +728,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         getPose(initialBaseToCurrent, cx, cy, cyaw);
 
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
-        double firstDistWithoutWall = 0;
 
         double velMult = 1.0;
 
-        if (followMode == FOLLOW_LEFT) {
-            // Check encroachment vectors for a side obstacle in the future
-            // Only pay attention to them if they are more restrictive than
-            // the current side obstacles.
-            if (forwardLeft.y() < minSideDist &&
-                leftObstacleDist > minSideDist) {
-                leftObstacleDist = forwardLeft.y();
-                velMult = 0.5;
-            }
-            if (minSideDist > 0 && leftObstacleDist < 1.0) {
-                if (leftObstacleDist < minSideDist) {
-                    ROS_DEBUG("out ");
-                    lateralError = sideTurnOutWeight *
-                        (leftObstacleDist - minSideDist);
-                }
-                else {
-                    ROS_DEBUG("in ");
-                    lateralError = sideTurnInWeight *
-                        (leftObstacleDist - minSideDist);
-                }
-            }
-            else {
-                lateralError = 0.0;
-            }
-        }
-        else if (followMode == FOLLOW_RIGHT) {
-            // Check encroachment vectors for a side obstacle in the future
-            // Only pay attention to them if they are more restrictive than
-            // the current side obstacles.
-            if (forwardRight.y() < minSideDist &&
-                rightObstacleDist > minSideDist) {
-                rightObstacleDist = forwardRight.y();
-                velMult = 0.5;
-            }
-            if (minSideDist > 0 && rightObstacleDist < 1.0) {
-                if (leftObstacleDist < minSideDist) {
-                    ROS_DEBUG("out ");
-                    lateralError = sideTurnOutWeight *
-                        (minSideDist - rightObstacleDist);
-                }
-                else {
-                    ROS_DEBUG("in ");
-                    lateralError = sideTurnInWeight *
-                        (minSideDist - rightObstacleDist);
-                }
-            }
-            else {
-                lateralError = 0.0;
-            }
-        }
-        else { // stick to planned path
-            lateralError = sideRecoverWeight * remaining.y();
-        }
+        // stick to planned path
+        lateralError = sideRecoverWeight * remaining.y();
+     
 /*
         Future enhancement: turn to avoid a forward obstacle
 
@@ -842,24 +747,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             }
         }
 */
-        // Abort if following a wall that is not there
-        if (followMode != DRIVE_STRAIGHT && maxFollowDistWithoutWall > 0) {
-            bool prevHasWall = hasWall;
-            if (followMode == FOLLOW_LEFT) {
-                hasWall = leftObstacleDist <= maxSideDist;
-            }
-            else if (followMode == FOLLOW_RIGHT) {
-                hasWall = rightObstacleDist <= maxSideDist;
-            }
-            if (!hasWall && prevHasWall) {
-                firstDistWithoutWall = distTravelled;
-            }
-            if (!hasWall && std::abs(firstDistWithoutWall - distTravelled) > maxFollowDistWithoutWall) {
-                abortGoal("Aborting since no wall to follow");
-                sendCmd(0, 0);
-                return false;
-            }
-        }
         if (std::abs(remaining.y()) >= maxLateralDev) {
             abortGoal("MoveBasic: Aborting since max deviation reached");
             sendCmd(0, 0);
