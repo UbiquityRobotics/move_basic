@@ -46,7 +46,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
 
-#include "move_basic/obstacle_detector.h"
+#include "move_basic/collision_checker.h"
 
 #include <string>
 
@@ -70,7 +70,8 @@ class MoveBasic {
     ros::Publisher errorPub;
 
     std::unique_ptr<MoveBaseActionServer> actionServer;
-    std::unique_ptr<ObstacleDetector> obstacle_detector;
+    std::unique_ptr<CollisionChecker> collision_checker;
+    std::unique_ptr<ObstaclePoints> obstacle_points;
 
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
@@ -293,7 +294,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
       "/move_base/goal", 1);
 
-    obstacle_detector.reset(new ObstacleDetector(nh, &tfBuffer));
+    obstacle_points.reset(new ObstaclePoints(nh));
+    collision_checker.reset(new CollisionChecker(nh, &tfBuffer, *obstacle_points));
 
     ROS_INFO("Move Basic ready");
 }
@@ -598,8 +600,8 @@ void MoveBasic::run()
 
     while (ros::ok()) {
         ros::spinOnce();
-        obstacle_detector->min_side_dist = minSideDist;
-        forwardObstacleDist = obstacle_detector->obstacle_dist(true,
+        collision_checker->min_side_dist = minSideDist;
+        forwardObstacleDist = collision_checker->obstacle_dist(true,
                                                                leftObstacleDist,
                                                                rightObstacleDist,
                                                                forwardLeft,
@@ -654,7 +656,7 @@ bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
         double angleRemaining = requestedYaw - currentYaw;
         normalizeAngle(angleRemaining);
 
-        double obstacle = obstacle_detector->obstacle_angle(angleRemaining > 0);
+        double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
         double speed = std::max(minAngularVelocity,
             std::min(maxAngularVelocity,
@@ -867,12 +869,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
 
-        ros::Time t = obstacle_detector->stamp;
-        if (t != sensorTime || followMode==DRIVE_STRAIGHT) {
-            lateralDiff = lateralError - prevLateralError;
-            prevLateralError = lateralError;
-            sensorTime = t;
-        }
+        lateralDiff = lateralError - prevLateralError;
+        prevLateralError = lateralError;
 
         lateralIntegral += lateralError;
 
@@ -907,7 +905,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         double obstacleDist = forwardObstacleDist;
         if (requestedDistance < 0.0) { // Reverse
-            obstacleDist = obstacle_detector->obstacle_dist(false,
+            obstacleDist = collision_checker->obstacle_dist(false,
                                                             leftObstacleDist,
                                                             rightObstacleDist,
                                                             forwardLeft,

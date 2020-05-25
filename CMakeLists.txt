@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 2.8.3)
 project(move_basic)
 
@@ -33,11 +32,11 @@ catkin_package(INCLUDE_DIRS DEPENDS)
 ## Build ##
 ###########
 
-add_definitions(-std=c++11)
+add_definitions(-std=c++11 -Wall)
 
 include_directories(${catkin_INCLUDE_DIRS} include)
 
-add_executable(move_basic src/obstacle_detector.cpp src/move_basic.cpp)
+add_executable(move_basic src/collision_checker.cpp src/obstacle_points.cpp src/move_basic.cpp)
 add_dependencies(move_basic ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
@@ -66,7 +65,8 @@ if(CATKIN_ENABLE_TESTING)
         find_package(rostest REQUIRED)
 
         add_rostest_gtest(obstacle_test test/obstacles.test
-                src/obstacle_detector.cpp
+                src/collision_checker.cpp
+                src/obstacle_points.cpp
                 test/test_obstacles.cpp)
         target_link_libraries(obstacle_test ${catkin_LIBRARIES})
 endif()
