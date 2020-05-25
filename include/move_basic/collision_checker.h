@@ -45,7 +45,7 @@ class CollisionChecker
 {
    std::string baseFrame;
    ros::Publisher line_pub;
-   tf2_ros::Buffer *tf_buffer;
+   tf2_ros::Buffer& tf_buffer;
    // footprint
    float robot_width;
    float robot_front_length;
@@ -73,7 +73,7 @@ class CollisionChecker
    float degrees(float radians) const;
 
 public:
-   CollisionChecker(ros::NodeHandle& nh, tf2_ros::Buffer *tf_buffer, ObstaclePoints& op);
+   CollisionChecker(ros::NodeHandle& nh, tf2_ros::Buffer& tf_buffer, ObstaclePoints& op);
    // return distance in meters to closest obstacle
    float obstacle_dist(bool forward, float &left_dist, float &right_dist,
                        tf2::Vector3 &fl, tf2::Vector3 &fr);

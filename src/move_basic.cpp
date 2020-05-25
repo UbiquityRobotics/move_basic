@@ -271,7 +271,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
       "/move_base/goal", 1);
 
     obstacle_points.reset(new ObstaclePoints(nh));
-    collision_checker.reset(new CollisionChecker(nh, &tfBuffer, *obstacle_points));
+    collision_checker.reset(new CollisionChecker(nh, tfBuffer, *obstacle_points));
 
     ROS_INFO("Move Basic ready");
 }

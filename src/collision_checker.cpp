@@ -72,11 +72,10 @@
 #include "move_basic/collision_checker.h"
 
 
-CollisionChecker::CollisionChecker(ros::NodeHandle& nh,
-                                   tf2_ros::Buffer *tf_buffer, ObstaclePoints& op) : ob_points(op)
+CollisionChecker::CollisionChecker(ros::NodeHandle& nh, tf2_ros::Buffer &tf_buffer, 
+		                   ObstaclePoints& op) : tf_buffer(tf_buffer),
+	                                                 ob_points(op)
 {
-    this->tf_buffer = tf_buffer;
-
     nh.param<std::string>("base_frame", baseFrame, "base_link");
 
     line_pub = ros::Publisher(

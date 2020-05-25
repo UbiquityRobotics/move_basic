@@ -51,7 +51,7 @@ protected:
         listener = new tf2_ros::TransformListener(tf_buffer);
 
         obstacle_points = new ObstaclePoints(nh);
-        obstacle_detector = new CollisionChecker(nh, &tf_buffer, *obstacle_points);
+        obstacle_detector = new CollisionChecker(nh, tf_buffer, *obstacle_points);
     }
 
     virtual void TearDown() { 
