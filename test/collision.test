@@ -1,0 +1,3 @@
+<launch>
+  <test test-name="collision_checker_test" pkg="move_basic" type="collision_checker_test"/>
+</launch>

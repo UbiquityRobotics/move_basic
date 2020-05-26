@@ -30,7 +30,6 @@
  */
 
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
 
 #include <ros/ros.h>
 #include <move_basic/collision_checker.h>
@@ -39,28 +38,22 @@
 
 #include <string>
 
-#if defined(__linux__)
-#include <pty.h>
-#else
-#include <util.h>
-#endif
-
-class ObstacleTests : public ::testing::Test {
+class CollisionCheckerTests : public ::testing::Test {
 protected:
     virtual void SetUp() {
         listener = new tf2_ros::TransformListener(tf_buffer);
 
-        obstacle_points = new ObstaclePoints(nh);
-        obstacle_detector = new CollisionChecker(nh, tf_buffer, *obstacle_points);
+        obstacle_points = new ObstaclePoints(nh, tf_buffer);
+        collision_checker = new CollisionChecker(nh, tf_buffer, *obstacle_points);
     }
 
     virtual void TearDown() { 
 	delete listener; 
-	delete obstacle_detector; 
+	delete collision_checker; 
 	delete obstacle_points; 
     }
 
-    CollisionChecker* obstacle_detector;
+    CollisionChecker* collision_checker;
     ObstaclePoints* obstacle_points;
 
     ros::NodeHandle nh;
@@ -68,132 +61,143 @@ protected:
     tf2_ros::TransformListener *listener;
 };
 
-/*
-TEST_F(ObstacleTests, noObstacles) {
-    float forward_dist = obstacle_detector->obstacle_dist(true);
-    float backward_dist = obstacle_detector->obstacle_dist(false);
-    ASSERT_FLOAT_EQ(forward_dist, 10.0);
-    ASSERT_FLOAT_EQ(backward_dist, 10.0);
+
+TEST_F(CollisionCheckerTests, noObstacles) {
+    tf2::Vector3 fl;
+    tf2::Vector3 fr;
+    float left;
+    float right;
+    float forward_dist = collision_checker->obstacle_dist(true, left, right, fl,fr);
+    float backward_dist = collision_checker->obstacle_dist(false, left, right, fl,fr);
+    ASSERT_FLOAT_EQ(forward_dist, 10.0 - 0.09);
+    ASSERT_FLOAT_EQ(backward_dist, 10.0 - 0.19);
 }
 
-TEST_F(ObstacleTests, forward) {
-    obstacle_detector->add_test_point(tf2::Vector3(1, 0, 0));
-    float forward_dist = obstacle_detector->obstacle_dist(true);
-    float backward_dist = obstacle_detector->obstacle_dist(false);
-    ASSERT_FLOAT_EQ(forward_dist, 0.95);
-    ASSERT_FLOAT_EQ(backward_dist, 10.0);
+TEST_F(CollisionCheckerTests, forward) {
+    tf2::Vector3 fl;
+    tf2::Vector3 fr;
+    float left;
+    float right;
+    obstacle_points->add_test_point(tf2::Vector3(1, 0, 0));
+    float forward_dist = collision_checker->obstacle_dist(true, left, right, fl,fr);
+    float backward_dist = collision_checker->obstacle_dist(false, left, right, fl,fr);
+    ASSERT_FLOAT_EQ(forward_dist, 1.0 - 0.09);
+    ASSERT_FLOAT_EQ(backward_dist, 10.0 - 0.19);
 }
 
-TEST_F(ObstacleTests, backward) {
-    obstacle_detector->clear_test_points();
-    obstacle_detector->add_test_point(tf2::Vector3(-1, 0, 0));
-    float forward_dist = obstacle_detector->obstacle_dist(true);
-    float backward_dist = obstacle_detector->obstacle_dist(false);
-    ASSERT_FLOAT_EQ(forward_dist, 10.0);
-    ASSERT_FLOAT_EQ(backward_dist, 0.88);
+TEST_F(CollisionCheckerTests, backward) {
+    tf2::Vector3 fl;
+    tf2::Vector3 fr;
+    float left;
+    float right;
+    obstacle_points->clear_test_points();
+    obstacle_points->add_test_point(tf2::Vector3(-1, 0, 0));
+    float forward_dist = collision_checker->obstacle_dist(true, left, right, fl,fr);
+    float backward_dist = collision_checker->obstacle_dist(false, left, right, fl,fr);
+    ASSERT_FLOAT_EQ(forward_dist, 10.0 - 0.09);
+    ASSERT_FLOAT_EQ(backward_dist, 1.0 - 0.19);
 }
-*/
 
-TEST_F(ObstacleTests, noObstaclesRot) {
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+TEST_F(CollisionCheckerTests, noObstaclesRot) {
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, M_PI);
     ASSERT_FLOAT_EQ(right_angle, M_PI);
 }
 
-TEST_F(ObstacleTests, obstaclesRotLeft) {
+TEST_F(CollisionCheckerTests, obstaclesRotLeft) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(0, .15, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, M_PI);
     ASSERT_FLOAT_EQ(right_angle, 1.0082601);
 }
 
-TEST_F(ObstacleTests, obstaclesRotRight) {
+TEST_F(CollisionCheckerTests, obstaclesRotRight) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(0, -.15, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 1.0082601);
     ASSERT_FLOAT_EQ(right_angle, M_PI);
 }
 
-TEST_F(ObstacleTests, obstaclesRotLeftBack) {
+TEST_F(CollisionCheckerTests, obstaclesRotLeftBack) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(-0.05, .15, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, M_PI);
     ASSERT_FLOAT_EQ(right_angle, 0.71854615);
 }
 
-TEST_F(ObstacleTests, obstaclesRotRightBack) {
+TEST_F(CollisionCheckerTests, obstaclesRotRightBack) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(-0.05, -.15, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.71854615);
     ASSERT_FLOAT_EQ(right_angle, M_PI);
 }
 
-TEST_F(ObstacleTests, obstaclesRotFrontCenter) {
+TEST_F(CollisionCheckerTests, obstaclesRotFrontCenter) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(0.1, 0.0, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.45102686);
     ASSERT_FLOAT_EQ(right_angle, 0.45102686);
 }
 
-TEST_F(ObstacleTests, obstaclesRotFrontLeft) {
+TEST_F(CollisionCheckerTests, obstaclesRotFrontLeft) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(0.1, 0.01, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.56083643);
     ASSERT_FLOAT_EQ(right_angle, 0.36149913);
 }
 
-TEST_F(ObstacleTests, obstaclesRotFrontRight) {
+TEST_F(CollisionCheckerTests, obstaclesRotFrontRight) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(0.1, -0.01, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.36149913);
     ASSERT_FLOAT_EQ(right_angle, 0.56083643);
 }
 
-TEST_F(ObstacleTests, obstaclesRotBackCenter) {
+TEST_F(CollisionCheckerTests, obstaclesRotBackCenter) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(-0.145, 0.0, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.58442998);
     ASSERT_FLOAT_EQ(right_angle, 0.58443004);
 }
 
-TEST_F(ObstacleTests, obstaclesRotBackLeft) {
+TEST_F(CollisionCheckerTests, obstaclesRotBackLeft) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(-0.145, 0.01, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.51400685);
     ASSERT_FLOAT_EQ(right_angle, 0.65171939);
 }
 
-TEST_F(ObstacleTests, obstaclesRotBackRight) {
+TEST_F(CollisionCheckerTests, obstaclesRotBackRight) {
     obstacle_points->clear_test_points();
     obstacle_points->add_test_point(tf2::Vector3(-0.145, -0.01, 0));
-    float left_angle = obstacle_detector->obstacle_angle(true);
-    float right_angle = obstacle_detector->obstacle_angle(false);
+    float left_angle = collision_checker->obstacle_angle(true);
+    float right_angle = collision_checker->obstacle_angle(false);
     ASSERT_FLOAT_EQ(left_angle, 0.65171939);
     ASSERT_FLOAT_EQ(right_angle, 0.51400685);
 }
 
 
 int main(int argc, char **argv) {
-    ros::init(argc, argv, "obstacle_tests");
+    ros::init(argc, argv, "collision_checker_tests");
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

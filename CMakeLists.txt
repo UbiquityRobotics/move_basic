@@ -64,10 +64,10 @@ install(TARGETS move_basic
 if(CATKIN_ENABLE_TESTING)
         find_package(rostest REQUIRED)
 
-        add_rostest_gtest(obstacle_test test/obstacles.test
+        add_rostest_gtest(collision_checker_test test/collision.test
                 src/collision_checker.cpp
                 src/obstacle_points.cpp
-                test/test_obstacles.cpp)
-        target_link_libraries(obstacle_test ${catkin_LIBRARIES})
+                test/test_collision.cpp)
+        target_link_libraries(collision_checker_test ${catkin_LIBRARIES})
 endif()
 
