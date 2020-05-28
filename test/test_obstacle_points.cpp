@@ -67,39 +67,40 @@ protected:
 
 using ::testing::ElementsAre;
 using ::testing::UnorderedElementsAre;
+using ::testing::Pair;
 
 TEST_F(ObstaclePointsTests, noSensors) {
     auto points = obstacle_points->get_points(ros::Duration(10));
     auto lines = obstacle_points->get_lines(ros::Duration(10));
-    ASSERT_EQ(points.size(), 0);
-    ASSERT_EQ(lines.size(), 0);
+    ASSERT_EQ(points.size(), 0u);
+    ASSERT_EQ(lines.size(), 0u);
 }
 
 TEST_F(ObstaclePointsTests, testPoints) {
     obstacle_points->add_test_point(tf2::Vector3(1.0,0.0,0.0));
     auto points = obstacle_points->get_points(ros::Duration(10));
     auto lines = obstacle_points->get_lines(ros::Duration(10));
-    ASSERT_EQ(points.size(), 1);
+    ASSERT_EQ(points.size(), 1u);
     ASSERT_EQ(points[0], tf2::Vector3(1.0,0.0,0.0));
-    ASSERT_EQ(lines.size(), 0);
+    ASSERT_EQ(lines.size(), 0u);
 
 
     obstacle_points->add_test_point(tf2::Vector3(2.0,0.0,0.0));
     points = obstacle_points->get_points(ros::Duration(10));
     lines = obstacle_points->get_lines(ros::Duration(10));
-    ASSERT_EQ(points.size(), 2);
+    ASSERT_EQ(points.size(), 2u);
     ASSERT_THAT(points, ElementsAre(tf2::Vector3(1,0,0), tf2::Vector3(2,0,0)));
-    ASSERT_EQ(lines.size(), 0);
+    ASSERT_EQ(lines.size(), 0u);
 
     obstacle_points->clear_test_points();
     points = obstacle_points->get_points(ros::Duration(10));
     lines = obstacle_points->get_lines(ros::Duration(10));
-    ASSERT_EQ(points.size(), 0);
-    ASSERT_EQ(lines.size(), 0);
+    ASSERT_EQ(points.size(), 0u);
+    ASSERT_EQ(lines.size(), 0u);
 }
 
 TEST_F(ObstaclePointsTests, singleSonar) {
-    ros::Duration(5).sleep();
+    ros::Duration(0.1).sleep(); // If we don't do this the publish never happens for some reason
     sensor_msgs::Range msg;
     msg.field_of_view = 1.5708;
     msg.min_range = 0.05;
@@ -110,17 +111,44 @@ TEST_F(ObstaclePointsTests, singleSonar) {
     msg.range = 1.0;
     sonar_pub.publish(msg);
 
+    // TODO fix this to be less ugly
     ros::spinOnce();
-    ros::Duration(3).sleep();
+    ros::Duration(0.1).sleep();
     ros::spinOnce();
+
     auto points = obstacle_points->get_points(ros::Duration(10));
     auto lines = obstacle_points->get_lines(ros::Duration(10));
-    ASSERT_EQ(points.size(), 2);
+    ASSERT_EQ(points.size(), 2u);
     ASSERT_NEAR(points[0].x(), sqrt(2)/2.0, 0.01);
     ASSERT_NEAR(points[0].y(), -sqrt(2)/2.0, 0.01);
     ASSERT_NEAR(points[1].x(), sqrt(2)/2.0, 0.01);
     ASSERT_NEAR(points[1].y(), sqrt(2)/2.0, 0.01);
-    ASSERT_EQ(lines.size(), 1);
+    
+    // We expect one line that consists of those 2 points
+    ASSERT_EQ(lines.size(), 1u);
+    ASSERT_THAT(lines, ElementsAre(Pair(points[0], points[1])));
+
+    // Do the same tests with a different range
+    msg.header.stamp = ros::Time::now();
+    msg.range = 2.0;
+    sonar_pub.publish(msg);
+
+    // TODO fix this to be less ugly
+    ros::spinOnce();
+    ros::Duration(0.1).sleep();
+    ros::spinOnce();
+
+    // We also want to make sure that the same sonar just updates the same points,
+    // instead of adding new ones
+    points = obstacle_points->get_points(ros::Duration(10));
+    lines = obstacle_points->get_lines(ros::Duration(10));
+    ASSERT_EQ(points.size(), 2u);
+    ASSERT_NEAR(points[0].x(), sqrt(2), 0.01);
+    ASSERT_NEAR(points[0].y(), -sqrt(2), 0.01);
+    ASSERT_NEAR(points[1].x(), sqrt(2), 0.01);
+    ASSERT_NEAR(points[1].y(), sqrt(2), 0.01);
+    ASSERT_EQ(lines.size(), 1u);
+    ASSERT_THAT(lines, ElementsAre(Pair(points[0], points[1])));
 }
 
 int main(int argc, char **argv) {
