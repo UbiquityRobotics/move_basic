@@ -51,7 +51,7 @@ void ObstaclePoints::range_callback(const sensor_msgs::Range::ConstPtr &msg) {
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
     if (it == sensors.end()) {
         try {
-	    ROS_WARN("lookup %s %s", baseFrame.c_str(), frame.c_str());
+	    ROS_INFO("lookup %s %s", baseFrame.c_str(), frame.c_str());
             geometry_msgs::TransformStamped sensor_to_base_tf =
                 tf_buffer.lookupTransform(baseFrame, frame, ros::Time(0));
 
@@ -91,8 +91,8 @@ void ObstaclePoints::range_callback(const sensor_msgs::Range::ConstPtr &msg) {
 
             RangeSensor sensor(sensors.size(), frame, origin,
                                left_vector, right_vector);
-            sensors[frame] = sensor;
             sensor.update(msg->range, msg->header.stamp);
+            sensors[frame] = sensor;
         }
         catch (tf2::TransformException &ex) {
             ROS_WARN("%s", ex.what());

@@ -69,5 +69,9 @@ if(CATKIN_ENABLE_TESTING)
                 src/obstacle_points.cpp
                 test/test_collision.cpp)
         target_link_libraries(collision_checker_test ${catkin_LIBRARIES})
+        add_rostest_gtest(obstacle_points_test test/obstacle_points.test
+                src/obstacle_points.cpp
+                test/test_obstacle_points.cpp)
+        target_link_libraries(obstacle_points_test ${catkin_LIBRARIES})
 endif()
 
