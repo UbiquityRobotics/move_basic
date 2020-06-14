@@ -463,3 +463,72 @@ float CollisionChecker::obstacle_angle(bool left)
     return min_angle;
 }
 
+
+float CollisionChecker::obstacle_arc_angle(double linear, double angular) {
+    const float radius = (float) std::abs(linear/angular);
+    const bool forward = linear >= 0;
+    const bool left = angular >= 0;
+
+    // Point of rotation relative to base_link
+    const auto point_of_rotation = tf2::Vector3(0, (left) ? radius : -radius, 0);
+
+    // Critical robot corners relative to point of rotation
+    const auto outer_point = tf2::Vector3(-robot_back_length, 
+            (left) ? -robot_width: robot_width, 0) - point_of_rotation;
+    const auto inner_point = tf2::Vector3(robot_front_length, 
+            (left) ? robot_width: -robot_width, 0) - point_of_rotation;
+
+    // Critical robot points in polar (r^2, theta) form relative to center 
+    // of rotation
+    const float outer_radius_sq = outer_point.length2();
+    const float outer_theta = std::atan2(outer_point.y(), outer_point.x());
+    const float inner_radius_sq = inner_point.length2();
+    //Not used const float inner_theta = std::atan2(inner_point.x(), -inner_point.y());
+
+    // Utility function to make sure that the angle relevant and not behind the robot
+    const auto angle_relevant = [&outer_theta, &left, &forward](float angle) -> bool {
+        if (forward) {
+            if (left) {
+                return angle > outer_theta;
+            } else {
+                return angle < outer_theta;
+            }
+        } else {
+            if (angle < 0) {
+                angle += 2.0 * M_PI;
+            }
+
+            if (left) {
+                return angle < outer_theta;
+            } else {
+                return angle > outer_theta;
+            }
+        }
+    };
+
+    float closest_angle = M_PI;
+    const auto points = ob_points.get_points(ros::Duration(max_age));
+    for (const auto& p : points) {
+        // Trasform the obstacle point into the coordiate system with the 
+        // point of rotation at the origin, with the same orientation as base_link
+        const tf2::Vector3 p_in_rot = p - point_of_rotation;
+        // Radius for polar coordinates around center of rotation 
+        const float p_radius_sq = p_in_rot.length2();
+
+        if(p_radius_sq < outer_radius_sq && p_radius_sq > inner_radius_sq) {
+            // Angle for polar coordinates around center of rotation
+            const float p_theta = std::atan2(p_in_rot.y(), p_in_rot.x());
+            if (angle_relevant(p_theta) && p_theta < M_PI) {
+                // TODO: This assumes that any collision with the point will be
+                // on the leading part of the robot, when in reality we can turn more
+                // than this amount if the point only causes a collision with the rear
+                // part of the robot as it swings around for a turn
+                closest_angle = std::min(closest_angle, p_theta);
+            }
+        }
+    }
+
+    // TODO: Check obstacle lines for intersection with robot arc
+
+    return closest_angle;
+}

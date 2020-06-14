@@ -195,6 +195,51 @@ TEST_F(CollisionCheckerTests, obstaclesRotBackRight) {
     ASSERT_FLOAT_EQ(right_angle, 0.51400685);
 }
 
+TEST_F(CollisionCheckerTests, arcNoObstacles) {
+    obstacle_points->clear_test_points();
+    float t = collision_checker->obstacle_arc_angle(0.0,0.0);
+    EXPECT_FLOAT_EQ(t, M_PI);
+    t = collision_checker->obstacle_arc_angle(0.0,1.0);
+    EXPECT_FLOAT_EQ(t, M_PI);
+}
+
+TEST_F(CollisionCheckerTests, arcForward) {
+    obstacle_points->clear_test_points();
+    obstacle_points->add_test_point(tf2::Vector3(0.1,0,0));
+    float left = collision_checker->obstacle_arc_angle(1.0,1.0);
+    float right = collision_checker->obstacle_arc_angle(1.0,-1.0);
+    EXPECT_FLOAT_EQ(left, -1.471128);
+    EXPECT_FLOAT_EQ(right, 1.471128);
+
+    obstacle_points->clear_test_points();
+    obstacle_points->add_test_point(tf2::Vector3(1,1,0));
+    obstacle_points->add_test_point(tf2::Vector3(1,-1,0));
+    left = collision_checker->obstacle_arc_angle(1.0,1.0);
+    right = collision_checker->obstacle_arc_angle(1.0,-1.0);
+    EXPECT_FLOAT_EQ(left, 0.0);
+    EXPECT_FLOAT_EQ(right, 0.0);
+
+    obstacle_points->clear_test_points();
+    obstacle_points->add_test_point(tf2::Vector3(0,0,0));
+    left = collision_checker->obstacle_arc_angle(1.0,1.0);
+    right = collision_checker->obstacle_arc_angle(1.0,-1.0);
+    EXPECT_FLOAT_EQ(left, -M_PI/2);
+    EXPECT_FLOAT_EQ(right, M_PI/2);
+
+    obstacle_points->clear_test_points();
+    obstacle_points->add_test_point(tf2::Vector3(-1,0,0));
+    left = collision_checker->obstacle_arc_angle(1.0,1.0);
+    right = collision_checker->obstacle_arc_angle(1.0,-1.0);
+    EXPECT_FLOAT_EQ(left, M_PI);
+    EXPECT_FLOAT_EQ(right, M_PI);
+    
+    obstacle_points->clear_test_points();
+    obstacle_points->add_test_point(tf2::Vector3(1,-1,0));
+    left = collision_checker->obstacle_arc_angle(1.0,1.0);
+    right = collision_checker->obstacle_arc_angle(1.0,-1.0);
+    EXPECT_FLOAT_EQ(left, M_PI);
+    EXPECT_FLOAT_EQ(right, 0.0);
+}
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "collision_checker_tests");

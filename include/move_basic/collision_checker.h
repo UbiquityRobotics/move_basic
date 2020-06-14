@@ -85,6 +85,8 @@ public:
 
    // return distance in radians to closest obstacle
    float obstacle_angle(bool left);
+   
+   float obstacle_arc_angle(double linear, double angular);
 
    double min_side_dist;
    double max_side_dist;
