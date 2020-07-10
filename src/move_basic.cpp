@@ -47,10 +47,11 @@
 #include <move_base_msgs/MoveBaseAction.h>
 
 #include "move_basic/collision_checker.h"
+#include "move_basic/queued_action_server.h"
 
 #include <string>
 
-typedef actionlib::SimpleActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
+typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
 
 enum {
     DRIVE_STRAIGHT,
@@ -263,8 +264,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                             &MoveBasic::goalCallback, this);
 
     ros::NodeHandle actionNh("");
-    actionServer.reset(new MoveBaseActionServer(actionNh,
-        "move_base", boost::bind(&MoveBasic::executeAction, this, _1), false));
+
+    actionServer.reset(new MoveBaseActionServer(actionNh, "move_base", 
+	boost::bind(&MoveBasic::executeAction, this, _1)));
 
     actionServer->start();
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
@@ -635,8 +637,8 @@ bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
         }
         prevAngleRemaining = angleRemaining;
 
-        if (actionServer->isNewGoalAvailable()) {
-            ROS_INFO("MoveBasic: Stopping rotation due to new goal");
+        if (actionServer->isPreemptRequested()) {
+            ROS_INFO("MoveBasic: Stopping rotation due to preempt");
             done = true;
             velocity = 0;
         }
@@ -838,8 +840,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             distTravelled = 0.0;
         }
 
-        if (actionServer->isNewGoalAvailable()) {
-            ROS_INFO("MoveBasic: Stopping rotation due to new goal");
+        if (actionServer->isPreemptRequested()) {
+            ROS_INFO("MoveBasic: Stopping move due to preempt");
             done = true;
             velocity = 0;
         }
