@@ -26,6 +26,12 @@ generate_messages(
   std_msgs 
 )
 
+# Generate actions in the 'action' folder
+add_action_files(
+	DIRECTORY action
+	files queueing.action
+)
+
 catkin_package(INCLUDE_DIRS DEPENDS)
 
 ###########
@@ -41,6 +47,8 @@ add_dependencies(move_basic ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
 target_link_libraries(move_basic ${catkin_LIBRARIES})
+
+add_library(move_basic src/move_basic.cpp)
 
 #############
 ## Install ##
@@ -73,5 +81,14 @@ if(CATKIN_ENABLE_TESTING)
                 src/obstacle_points.cpp
                 test/test_obstacle_points.cpp)
         target_link_libraries(obstacle_points_test ${catkin_LIBRARIES})
+	add_rostest_gtest(goal_queueing_test test/goal_queueing.test 
+		src/move_basic.cpp
+		test/test_goal_queueing.cpp)
+	target_link_libraries(goal_queueing_test ${catkin_LIBRARIES})	
 endif()
 
+
+# add_executable(goal_server src/move_basic.cpp)
+# target_link_libraries(goal_server ${catkin_LIBRARIES})
+# add_executable(goal_client test/test_goal_queueing.cpp)
+# target_link_libraries(goal_client ${catkin_LIBRARIES})
