@@ -9,6 +9,10 @@
 class GoalQueueSuite : public ::testing::Test {
 protected:
 	virtual void SetUp() {
+<<<<<<< HEAD
+=======
+		// variables here?
+>>>>>>> 6a40f4dc81982ffbcd52a674a2496b31130e1941
 		got_goal = false;
 		goal_preempted = false;
 		current_goal = NULL;
@@ -19,6 +23,7 @@ public:
 	bool got_goal;
 	bool goal_preempted;
 	move_base_msgs::MoveBaseGoalConstPtr current_goal;
+<<<<<<< HEAD
 	move_base_msgs::MoveBaseGoalConstPtr next_goal;
 	//std::queue<move_base_msgs::MoveBaseGoal> qgoals;	
 	ros::NodeHandle nh;
@@ -47,6 +52,12 @@ public:
 		//if (qgoals.size() > 2) { // start index?
 		//	qgoals.push(*current_goal);
 		//}		
+=======
+	bool got_goal = false;
+	void executeCallback(const move_base_msgs::MoveBaseGoalConstPtr &msg){
+		got_goal = true;
+		current_goal = msg;
+>>>>>>> 6a40f4dc81982ffbcd52a674a2496b31130e1941
 	}
 };
 
