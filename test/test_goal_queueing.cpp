@@ -9,15 +9,14 @@ class GoalQueueSuite : public ::testing::Test {
 protected:
 	virtual void SetUp() {
 		// variables here?
-	//initialization, declaration!!!
 		got_goal = false;
 	}
 	virtual void TearDown() {}
 public:
 	move_base_msgs::MoveBaseGoalConstPtr current_goal;
-	bool got_goal = true;
+	bool got_goal = false;
 	void executeCallback(const move_base_msgs::MoveBaseGoalConstPtr &msg){
-		got_goal = false;
+		got_goal = true;
 		current_goal = msg;
 	}
 };
