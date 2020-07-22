@@ -12,8 +12,11 @@ protected:
 	virtual void TearDown() {}
 
 	//SHARED POINTER
+	std::shared_ptr<actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction>> qserv(new  actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction>>)
+	qserv->
 
-	bool got_goal;
+	bool got_goal1;
+	bool got_goal2;
 	bool goal_preempted;
 	move_base_msgs::MoveBaseGoalConstPtr current_goal;
 	move_base_msgs::MoveBaseGoalConstPtr next_goal;
@@ -22,7 +25,8 @@ protected:
 	actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> cli;	
 
 	// TODO: Sharing between objects? (Isolation!)
-	GoalQueueSuite() : got_goal(false),
+	GoalQueueSuite() : got_goal1(false),
+			   got_goal2(false),
 			   goal_preempted(false),
 			   current_goal(nullptr),
 			   next_goal(nullptr),
@@ -39,9 +43,14 @@ protected:
 
 	// TODO: Making sure it gets called at the right time (flags!)
 	void executeCallback(const move_base_msgs::MoveBaseGoalConstPtr &msg){
-		got_goal = true;
-		if (current_goal == nullptr) current_goal = msg;
-		else if (next_goal == nullptr) next_goal = msg;
+		if (current_goal == nullptr) {
+			got_goal1 = true;
+			current_goal = msg;
+		}
+		else if (next_goal == nullptr) {
+			got_goal2 = true;
+			next_goal = msg;
+		}
 		else {
 			current_goal = next_goal;
 			goal_preempted = true; 
@@ -59,12 +68,32 @@ TEST_F(GoalQueueSuite, establishDuplex) {
 	ros::spinOnce(); 
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 
-	ASSERT_TRUE(got_goal);
+	ASSERT_TRUE(got_goal1);
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 }
 
 
 TEST_F(GoalQueueSuite, queueAdding) { // Probably now I should be sending to goalCallback?
+	move_base_msgs::MoveBaseGoal goal; 
+	goal.target_pose.pose.position.x = 3.0;
+
+	cli.sendGoal(goal);
+	ros::spinOnce(); 
+	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
+
+	ASSERT_TRUE(got_goal1);
+	
+	cli.sendGoal(goal);
+	ros::spinOnce(); 
+	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
+
+	ASSERT_TRUE(got_goal2);
+	
+	cli.sendGoal(goal);
+	ros::spinOnce(); 
+	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
+
+	ASSERT_TRUE(goal_preempted);
 	/* 
 	- if another goal is received add it to the queue
 	- if the queue full, set the current goal as preempted
