@@ -37,6 +37,7 @@ protected:
 		else {
 			current_goal = next_goal;
 			goal_preempted = true; 
+			qserv->setPreempted();
 			next_goal = msg;
 		} 
 	}
@@ -89,6 +90,7 @@ TEST_F(GoalQueueSuite, queueAdding) {
 	ros::spinOnce(); 
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 
+	ASSERT_TRUE(qserv->isPreemptRequested());
 	ASSERT_TRUE(goal_preempted);
 	ASSERT_EQ(7.0, current_goal->target_pose.pose.position.x);
 	ASSERT_EQ(13.0, next_goal->target_pose.pose.position.x);
