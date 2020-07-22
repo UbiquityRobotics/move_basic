@@ -10,11 +10,14 @@ protected:
 	virtual void SetUp() {
 		// variables here?
 	//initialization, declaration!!!
+		got_goal = false;
 	}
 	virtual void TearDown() {}
 public:
-	move_base_msgs::MoveBaseGoalConstPtr current_goal;	
+	move_base_msgs::MoveBaseGoalConstPtr current_goal;
+	bool got_goal = true;
 	void executeCallback(const move_base_msgs::MoveBaseGoalConstPtr &msg){
+		got_goal = false;
 		current_goal = msg;
 	}
 };
@@ -24,12 +27,24 @@ TEST_F(GoalQueueSuite, establishDuplex) {
 	// TODO:  Make this more beautiful
 	ros::NodeHandle nh;
 	actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> cli("queue_server", true); // true -> don't need ros::spin(), required separate thread
-	actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> qserv(nh, "queue_server", boost::bind(&GoalQueueSuite::executeCallback, this, _1));	
-
+	actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> qserv(nh, "queue_server", boost::bind(&GoalQueueSuite::executeCallback, this, _1));
+	qserv.start();
+	
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
 	cli.sendGoal(goal);
+	ros::spinOnce();
+	ros::spinOnce();
+	ros::spinOnce();
+	ros::spinOnce();
 	ros::Duration(5.0).sleep();
+	ros::spinOnce();
+	ros::spinOnce();
+	ros::spinOnce();
+	ros::spinOnce();
+	ros::spinOnce();
+
+	ASSERT_TRUE(got_goal);
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 	
 	// ROS API
