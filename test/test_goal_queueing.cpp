@@ -9,10 +9,6 @@
 class GoalQueueSuite : public ::testing::Test {
 protected:
 	virtual void SetUp() {
-<<<<<<< HEAD
-=======
-		// variables here?
->>>>>>> 6a40f4dc81982ffbcd52a674a2496b31130e1941
 		got_goal = false;
 		goal_preempted = false;
 		current_goal = NULL;
@@ -23,14 +19,13 @@ public:
 	bool got_goal;
 	bool goal_preempted;
 	move_base_msgs::MoveBaseGoalConstPtr current_goal;
-<<<<<<< HEAD
 	move_base_msgs::MoveBaseGoalConstPtr next_goal;
 	//std::queue<move_base_msgs::MoveBaseGoal> qgoals;	
 	ros::NodeHandle nh;
 	actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> qserv;
 	actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> cli;	
 
-	GoalQueueSuite() : qserv(nh, "queue_server", boost::bind(&GoalQueueSuite::executeCallback, this, _1)),
+	GoalQueueSuite() : qserv(nh, "queue_server", boost::bind(&GoalQueueSuite::executeCallback, this, _1)),		   
 			   cli("queue_server", true) // true -> don't need ros::spin(), required separate thread 
 	{
 		qserv.start();
@@ -52,12 +47,6 @@ public:
 		//if (qgoals.size() > 2) { // start index?
 		//	qgoals.push(*current_goal);
 		//}		
-=======
-	bool got_goal = false;
-	void executeCallback(const move_base_msgs::MoveBaseGoalConstPtr &msg){
-		got_goal = true;
-		current_goal = msg;
->>>>>>> 6a40f4dc81982ffbcd52a674a2496b31130e1941
 	}
 };
 
@@ -88,6 +77,22 @@ TEST_F(GoalQueueSuite, queueAdding) { // probably now I should be sending to goa
 	//ASSERT_TRUE(qserv.isPreemptRequested());
 }
 
+
+TEST_F(GoalQueueSuite, goalPreempting) {
+	/*
+	- if a cancel request is received for the current goal, set it as preempted
+	- if there another goal, start executing it
+	- if no goal, stop
+	*/
+}
+
+TEST_F(GoalQueueSuite, goalCancelling) {
+	/*
+	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
+	*/
+}
+
+// Two more TEST_F missing and a pitfall
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "goal_queueing_test");
