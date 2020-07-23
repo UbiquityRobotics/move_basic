@@ -5,6 +5,7 @@
 #include <move_base_msgs/MoveBaseAction.h>
 #include <move_basic/queued_action_server.h>
 #include <queue>
+#include <memory>
 
 class GoalQueueSuite : public ::testing::Test {
 protected:
@@ -35,9 +36,8 @@ protected:
 			next_goal = msg;
 		}
 		else {
-			current_goal = next_goal;
 			goal_preempted = true; 
-			qserv->setPreempted();
+			current_goal = next_goal;
 			next_goal = msg;
 		} 
 	}
@@ -47,6 +47,7 @@ protected:
 	bool goal_preempted;
 	move_base_msgs::MoveBaseGoalConstPtr current_goal;
 	move_base_msgs::MoveBaseGoalConstPtr next_goal;
+	// Why smart pointers? (Other ways of doing it?)
 	std::unique_ptr<actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction>> qserv;
 	std::unique_ptr<actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction>> cli;
 };
@@ -68,30 +69,37 @@ TEST_F(GoalQueueSuite, establishDuplex) {
 TEST_F(GoalQueueSuite, queueAdding) { 
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
-
+	
+	// First goal
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 
 	ASSERT_TRUE(got_goal1);
+	ASSERT_TRUE(qserv->isActive()); // TODO: Failling!
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 	
+	// Second goal
 	goal.target_pose.pose.position.x = 7.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 
 	ASSERT_TRUE(got_goal2);
+	ASSERT_TRUE(qserv->isActive()); // TODO: Failling!
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 	ASSERT_EQ(7.0, next_goal->target_pose.pose.position.x);
 	
+	// Third goal
 	goal.target_pose.pose.position.x = 13.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 
-	ASSERT_TRUE(qserv->isPreemptRequested());
+	// Because Queue full, current goal should be preempted by Actionserver
+	ASSERT_TRUE(qserv->isPreemptRequested());	
 	ASSERT_TRUE(goal_preempted);
+	// TODO: How to check next goal is executing?
 	ASSERT_EQ(7.0, current_goal->target_pose.pose.position.x);
 	ASSERT_EQ(13.0, next_goal->target_pose.pose.position.x);
 	/* 
@@ -99,8 +107,6 @@ TEST_F(GoalQueueSuite, queueAdding) {
 	- if the queue full, set the current goal as preempted
 	- start executing the next goal in queue (the one after the preempted)
 	*/	
-
-	//ASSERT_TRUE(qserv.isPreemptRequested());
 }
 
 
