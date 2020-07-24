@@ -16,7 +16,7 @@ protected:
 		current_goal = nullptr;
 		next_goal = nullptr;
 		ros::NodeHandle actionNh("");
-		qserv.reset(new actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> (actionNh, "queue_server", boost::bind(&GoalQueueSuite::executeCallback, this, _1))); // send to all callbacks?
+		qserv.reset(new actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> (actionNh, "queue_server", boost::bind(&GoalQueueSuite::executeCallback, this, _1))); 
 		cli.reset(new actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> ("queue_server", true)); // true -> don't need ros::spin() 
 		qserv->start();
 	}
@@ -25,20 +25,23 @@ protected:
 		qserv->shutdown();
 	}
 
-	// TODO: Making sure it gets called at the right time (flags!)
+	// TODO: Making sure it gets called at the right time (flags!) - in its own thread
 	void executeCallback(const move_base_msgs::MoveBaseGoalConstPtr &msg){
 		if (current_goal == nullptr) {
 			got_goal1 = true;
 			current_goal = msg;
+			ros::Duration(3.0).sleep();
 		}
 		else if (next_goal == nullptr) {
 			got_goal2 = true;
 			next_goal = msg;
+			ros::Duration(3.0).sleep();
 		}
 		else {
 			goal_preempted = true; 
 			current_goal = next_goal;
 			next_goal = msg;
+			ros::Duration(3.0).sleep();
 		} 
 	}
 	
@@ -47,25 +50,26 @@ protected:
 	bool goal_preempted;
 	move_base_msgs::MoveBaseGoalConstPtr current_goal;
 	move_base_msgs::MoveBaseGoalConstPtr next_goal;
-	// Why smart pointers? (Other ways of doing it?)
 	std::unique_ptr<actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction>> qserv;
 	std::unique_ptr<actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction>> cli;
 };
 
-
+// IMPORTANT: Time delays and ros::spinOnce() sequence should stay the same, otherwise, strange things happen
+// TODO: Theory behind ros::spinOnce and delays
 TEST_F(GoalQueueSuite, establishDuplex) {
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
-
 	ros::spinOnce(); 
+	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
-
 	ASSERT_TRUE(got_goal1);
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 }
 
-
+//Cancelling done on the client side
+//Because Queue full, current goal should be preempted by Actionserver internally
+// TODO: Achieve execution of multiple goals at a time, HOW????
 TEST_F(GoalQueueSuite, queueAdding) { 
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
@@ -73,56 +77,72 @@ TEST_F(GoalQueueSuite, queueAdding) {
 	// First goal
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
+	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
-
 	ASSERT_TRUE(got_goal1);
-	ASSERT_TRUE(qserv->isActive()); // TODO: Failling!
+	ASSERT_TRUE(qserv->isActive());
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
-	
-	// Second goal
+
+	// Second goal - TODO: Troubles with the second goal
 	goal.target_pose.pose.position.x = 7.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
-
+	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
+	ros::Duration(2.0).sleep(); // TODO: Make this disappear 
+	ros::spinOnce(); 
 	ASSERT_TRUE(got_goal2);
-	ASSERT_TRUE(qserv->isActive()); // TODO: Failling!
+	ASSERT_TRUE(qserv->isActive()); 
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 	ASSERT_EQ(7.0, next_goal->target_pose.pose.position.x);
 	
+/*
 	// Third goal
 	goal.target_pose.pose.position.x = 13.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
+*/
 
-	// Because Queue full, current goal should be preempted by Actionserver
-	ASSERT_TRUE(qserv->isPreemptRequested());	
-	ASSERT_TRUE(goal_preempted);
-	// TODO: How to check next goal is executing?
-	ASSERT_EQ(7.0, current_goal->target_pose.pose.position.x);
-	ASSERT_EQ(13.0, next_goal->target_pose.pose.position.x);
-	/* 
-	- if another goal is received add it to the queue
-	- if the queue full, set the current goal as preempted
+/*
+	- if another goal is received add it to the queue 
+	- if the queue full, set the current goal as preempted - explicitly called! - so cancelling the current goal and start executing the next one
 	- start executing the next goal in queue (the one after the preempted)
-	*/	
+*/
 }
 
 
 TEST_F(GoalQueueSuite, goalPreempting) {
+	move_base_msgs::MoveBaseGoal goal; 
+	goal.target_pose.pose.position.x = 3.0;
+	
+	// First goal
+	cli->sendGoal(goal);
+	ros::spinOnce(); 
+	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
+	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
+	ASSERT_TRUE(got_goal1);
+	ASSERT_TRUE(qserv->isActive());
+	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
+
+	cli->cancelGoal();
+	ros::Duration(1.0).sleep(); 
+	ros::spinOnce(); 
+	ASSERT_TRUE(qserv->isPreemptRequested());	
+
 	/*
-	- if a cancel request is received for the current goal, set it as preempted
+	- if a cancel request is received for the current goal, set it as preempted (DONE)
 	- if there another goal, start executing it
 	- if no goal, stop
 	*/
 }
 
-TEST_F(GoalQueueSuite, goalCancelling) {
+// TODO: How can I cancel the second goal???
+//TEST_F(GoalQueueSuite, goalCancelling) {
 	/*
 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
+	- TODO: How to check next goal is executing? It becomes current, so isActive()
 	*/
-}
+//}
 
 // Two more TEST_F missing and a pitfall
 
