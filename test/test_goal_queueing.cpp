@@ -55,7 +55,6 @@ protected:
 };
 
 // IMPORTANT: Time delays and ros::spinOnce() sequence should stay the same, otherwise, strange things happen
-// TODO: Theory behind ros::spinOnce and delays
 TEST_F(GoalQueueSuite, establishDuplex) {
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
@@ -65,6 +64,7 @@ TEST_F(GoalQueueSuite, establishDuplex) {
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 	ASSERT_TRUE(got_goal1);
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
+	// - start executing goal as soon as one is available (DONE)
 }
 
 //Cancelling done on the client side
@@ -90,7 +90,7 @@ TEST_F(GoalQueueSuite, queueAdding) {
 	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
 	ros::Duration(2.0).sleep(); // TODO: Make this disappear 
 	ros::spinOnce(); 
-	ASSERT_TRUE(got_goal2);
+	ASSERT_TRUE(got_goal2); // Sometimes fails, run it again
 	ASSERT_TRUE(qserv->isActive()); 
 	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
 	ASSERT_EQ(7.0, next_goal->target_pose.pose.position.x);
@@ -104,7 +104,7 @@ TEST_F(GoalQueueSuite, queueAdding) {
 */
 
 /*
-	- if another goal is received add it to the queue 
+	- if another goal is received add it to the queue (DONE) 
 	- if the queue full, set the current goal as preempted - explicitly called! - so cancelling the current goal and start executing the next one
 	- start executing the next goal in queue (the one after the preempted)
 */
@@ -115,7 +115,7 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
 	
-	// First goal
+	// One goal -> Cancel request -> Stop
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
@@ -128,21 +128,36 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
 	ASSERT_TRUE(qserv->isPreemptRequested());	
+	ros::Duration(1.0).sleep(); 
+	ASSERT_FALSE(qserv->isActive());
 
+	//TODO: Two goals -> Cancel request(current goal) -> Execute next goal
+	
 	/*
 	- if a cancel request is received for the current goal, set it as preempted (DONE)
 	- if there another goal, start executing it
-	- if no goal, stop
+	- if no goal, stop (DONE)
 	*/
 }
 
-// TODO: How can I cancel the second goal???
-//TEST_F(GoalQueueSuite, goalCancelling) {
+// TODO: How can I cancel the second goal??? CANCEL REQUEST CANCELS THE LAST GOAL SENT
+TEST_F(GoalQueueSuite, goalCancelling) {
+	move_base_msgs::MoveBaseGoal goal; 
+	goal.target_pose.pose.position.x = 3.0;
+
+	cli->sendGoal(goal);
+	ros::spinOnce(); 
+	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
+	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
+	ASSERT_TRUE(got_goal1);
+	ASSERT_TRUE(qserv->isActive());
+	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
+
 	/*
 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
 	- TODO: How to check next goal is executing? It becomes current, so isActive()
 	*/
-//}
+}
 
 // Two more TEST_F missing and a pitfall
 
