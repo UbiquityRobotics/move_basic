@@ -98,7 +98,6 @@ protected:
 		finish_executing = false;
 		resume_executing = false;
 		execute_done = false;
-
 	}
 
 	// Flags for assertions
@@ -146,19 +145,37 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	ASSERT_TRUE(got_goal);
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
-	// Second goal
+	// Cancelling the first goal - PITFALL
+	resumeExecuting();
+	cli->cancelGoal();
+	ros::Duration(1.0).sleep(); 
+	ros::spinOnce(); 
+	ASSERT_TRUE(goal_preempted);
+	// Finish the preempted goal
+	finishExecuting();
+	
+	// "Second" goal
 	goal.target_pose.pose.position.x = 7.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(0.5).sleep(); // TODO: Make this disappear
+	ASSERT_TRUE(qserv->isActive());
+	ASSERT_TRUE(got_goal);
+	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x); // call FINISH!
+	
+	// Third goal
+	goal.target_pose.pose.position.x = 13.0;
+	cli->sendGoal(goal);
+	ros::spinOnce(); 
+	ros::Duration(0.5).sleep(); // TODO: Make this disappear
 	resumeExecuting();
-	// Make sure that the first goal is still executing, but a new goal is seen
+	// Make sure that the "second" goal is still executing, but a new goal is seen
 	ASSERT_TRUE(qserv->isActive()); 
 	ASSERT_TRUE(got_goal);
+	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x);
 	ASSERT_FALSE(goal_preempted);
-	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 	ASSERT_TRUE(next_goal_available); 
-	// Finish the first goal, then the 2nd goal should start executing
+	// Finish the "second" goal, then the 3nd goal should start executing
 	finishExecuting();
 	ros::spinOnce(); 
 	ros::Duration(0.5).sleep(); // TODO: Make this disappear
@@ -166,8 +183,8 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	ASSERT_TRUE(got_goal);
 	ASSERT_FALSE(goal_preempted);
 	ASSERT_FALSE(next_goal_available);
-	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x);
-	finishExecuting(); // Finish the 2nd goal
+	ASSERT_EQ(13.0, received_goal->target_pose.pose.position.x);
+	finishExecuting(); // Finish the 3nd goal
 /*
 	- if another goal is received add it to the queue (DONE) 
 	- if the queue full, set the current goal as preempted - explicitly called! - so cancelling the current goal and start executing the next one
@@ -177,38 +194,33 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 
 
 TEST_F(GoalQueueSuite, goalPreempting) {
-/*
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
-	
 	// One goal -> Cancel request -> Stop
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
-	ASSERT_TRUE(got_goal1);
+	ASSERT_TRUE(got_goal);
 	ASSERT_TRUE(qserv->isActive());
-	ASSERT_EQ(3.0, current_goal->target_pose.pose.position.x);
+	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
+	resumeExecuting();
 	cli->cancelGoal();
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
-<<<<<<< HEAD
-	ASSERT_TRUE(qserv->isPreemptRequested());	
-	ros::Duration(1.0).sleep(); 
-	ASSERT_FALSE(qserv->isActive());
-=======
-	ASSERT_TRUE(qserv->isPreemptRequested());
-	*/
+	//ros::Duration(1.0).sleep(); 
+	ASSERT_TRUE(goal_preempted);	
+	//ASSERT_FALSE(qserv->isActive());
+	//ASSERT_TRUE(qserv->isPreemptRequested());
+	finishExecuting(); // Finish the goal
 
 	//TODO: Two goals -> Cancel request(current goal) -> Execute next goal
 	
-	/*
-	- if a cancel request is received for the current goal, set it as preempted (DONE)
-	- if there another goal, start executing it
-	- if no goal, stop (DONE)
-	*/
+//	- if a cancel request is received for the current goal, set it as preempted (DONE)
+//	- if there another goal, start executing it
+//	- if no goal, stop (DONE)
 }
+
 
 // TODO: How can I cancel the second goal??? CANCEL REQUEST CANCELS THE LAST GOAL SENT
 TEST_F(GoalQueueSuite, goalCancelling) {
@@ -217,7 +229,6 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-	ASSERT_TRUE(qserv->isNewGoalAvailable()); // If moved, strange things happen
 	ros::Duration(1.0).sleep(); // TODO: Make this disappear 
 	ASSERT_TRUE(got_goal);
 	ASSERT_TRUE(qserv->isActive());
