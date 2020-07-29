@@ -275,8 +275,12 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	finishExecuting();
 	//ASSERT_FALSE(qserv->isActive()); // TODO: Why is this failling? 
 
-//	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
+	/*
+	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
+	- TODO: How to check next goal is executing? It becomes current, so isActive()
+	*/
 }
+
 // Two more TEST_F missing and a pitfall
 
 
