@@ -141,54 +141,50 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(0.5).sleep(); // TODO: Make this disappear 
-	ASSERT_TRUE(qserv->isActive());
+//	ASSERT_TRUE(qserv->isActive());
 	ASSERT_TRUE(got_goal);
+	ASSERT_FALSE(goal_preempted);
+	ASSERT_FALSE(next_goal_available);
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
-	// Cancelling the first goal - PITFALL
-	cli->cancelGoal();
-	resumeExecuting();
-	ros::Duration(1.0).sleep(); 
-	ros::spinOnce(); 
-	ASSERT_TRUE(goal_preempted);
-	// Finish the preempted goal
-	finishExecuting();
-	
 	// "Second" goal
 	goal.target_pose.pose.position.x = 7.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(0.5).sleep(); // TODO: Make this disappear
+	
+	resumeExecuting();	
 	ASSERT_TRUE(qserv->isActive());
 	ASSERT_TRUE(got_goal);
-	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x); 
+	ASSERT_TRUE(next_goal_available);
+	ASSERT_FALSE(goal_preempted);
+	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x); 
 	
-	// Third goal
+	// Cancelling the last goal
+	cli->cancelGoal(); // Cancels the last goal sent
+	finishExecuting(); // Finish 1st goal
+	ros::Duration(1.0).sleep(); 
+	resumeExecuting(); // Resume 2nd goal
+	ros::Duration(1.0).sleep(); 
+	ros::spinOnce(); 
+	ASSERT_TRUE(goal_preempted);
+	finishExecuting(); // Finish 2st goal
+	
+	// New goal
 	goal.target_pose.pose.position.x = 13.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	ros::Duration(0.5).sleep(); // TODO: Make this disappear
 	resumeExecuting();
-	// Make sure that the "second" goal is still executing, but a new goal is seen
-	ASSERT_TRUE(qserv->isActive()); 
-	ASSERT_TRUE(got_goal);
-	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x);
-	ASSERT_FALSE(goal_preempted);
-	//ASSERT_TRUE(next_goal_available); // TODO: Fails when changing other code??? 
-	// Finish the "second" goal, then the 3nd goal should start executing
-	finishExecuting();
-	ros::spinOnce(); 
-	ros::Duration(0.5).sleep(); // TODO: Make this disappear
 	ASSERT_TRUE(qserv->isActive()); 
 	ASSERT_TRUE(got_goal);
 	ASSERT_FALSE(goal_preempted);
-	ASSERT_FALSE(next_goal_available);
 	ASSERT_EQ(13.0, received_goal->target_pose.pose.position.x);
-	finishExecuting(); // Finish the 3nd goal
+	finishExecuting(); // Finish new goal
 /*
 	- if another goal is received add it to the queue (DONE) 
-	- if the queue full, set the current goal as preempted - explicitly called! - so cancelling the current goal and start executing the next one
-	- start executing the next goal in queue (the one after the preempted)
+	- if the queue full, set the next goal as preempted - explicitly called! - so cancelling the next goal and adding new to the queue
+	- start executing the new goal in queue (after the current)
 */
 }
 
