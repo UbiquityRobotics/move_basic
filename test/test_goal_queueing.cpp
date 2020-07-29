@@ -146,8 +146,8 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
 	// Cancelling the first goal - PITFALL
-	resumeExecuting();
 	cli->cancelGoal();
+	resumeExecuting();
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
 	ASSERT_TRUE(goal_preempted);
@@ -205,8 +205,8 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	ASSERT_TRUE(qserv->isActive());
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
-	resumeExecuting();
 	cli->cancelGoal();
+	resumeExecuting();
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
 	ASSERT_TRUE(goal_preempted);	
@@ -225,8 +225,8 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
 	// Cancelling the first goal - PITFALL
-	resumeExecuting();
 	cli->cancelGoal();
+	resumeExecuting();
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
 	ASSERT_TRUE(goal_preempted);
@@ -270,11 +270,10 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	ros::spinOnce(); 
 	// Cancelling the second goal
 	cli->cancelGoal();
+	resumeExecuting();
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
 	//ASSERT_TRUE(goal_preempted); // TODO: Why is this failling? 
-
-	resumeExecuting();
 	ASSERT_TRUE(qserv->isActive());
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x); 
 	finishExecuting();
