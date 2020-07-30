@@ -36,16 +36,8 @@ protected:
 		got_goal = true;
 		received_goal = msg;
 		while (true) {
-			if (qserv->isPreemptRequested()) {
-				goal_preempted = true;
-			} else {
-				goal_preempted = false;
-			}
-			if (qserv->isNewGoalAvailable()) {
-				next_goal_available = true;
-			} else {
-				next_goal_available = false;
-			}
+			goal_preempted = qserv->isPreemptRequested() ? true : false; 
+			next_goal_available = qserv->isNewGoalAvailable() ? true : false;
 
 			// Test fixture can continue
 			execution = true;
@@ -90,6 +82,13 @@ protected:
 		execute_cv.notify_one();
 	}
 
+	void sleepExecuting() {
+		std::unique_lock<std::mutex> slk(sleep_lock);
+		sleep_cv.wait(slk, 
+				[this](){return execution;}
+			); 
+	}
+
 	void resetFlags() {
 		got_goal = false;
 		goal_preempted = false;
@@ -126,34 +125,30 @@ protected:
 };
 
 // TODO: Remove lambda -> HELPER FUNCTION
-/*
 TEST_F(GoalQueueSuite, establishDuplex) {
 	move_base_msgs::MoveBaseGoal goal; 
-	std::unique_lock<std::mutex> slk(sleep_lock);
 
 	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-	sleep_cv.wait(slk);
-	
+
+ 	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	ASSERT_FALSE(goal_preempted);
 	ASSERT_FALSE(next_goal_available);
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 	finishExecuting();
 }
-*/
 
 TEST_F(GoalQueueSuite, addGoalWhileExecuting) { 
 	move_base_msgs::MoveBaseGoal goal; 
-	std::unique_lock<std::mutex> slk(sleep_lock);
 
 	// First goal
 	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-	sleep_cv.wait(slk);
 
+	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	ASSERT_FALSE(goal_preempted);
 	ASSERT_FALSE(next_goal_available);
@@ -165,14 +160,14 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	ros::spinOnce(); 
 
 	resumeExecuting();
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false 
+	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	
 	// Cancelling the last goal
 	cli->cancelGoal(); // Cancels the last goal sent
 	finishExecuting(); // Finish 1st goal
 	resumeExecuting(); // resuming the 2nd goal
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false 
+	sleepExecuting();
 	// ASSERT_TRUE(goal_preempted);
 	finishExecuting(); // Finish 2st goal
 	
@@ -181,37 +176,35 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false 
+	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	// ASSERT_FALSE(goal_preempted);
 	// ASSERT_EQ(13.0, received_goal->target_pose.pose.position.x);
 	finishExecuting(); // Finish new goal
-
 // 	- if another goal is received add it to the queue (DONE) 
 // 	- if the queue full, set the next goal as preempted - explicitly called! - so cancelling the next goal and adding new to the queue
 // 	- start executing the new goal in queue (after the current)
 }
-/*
+
 TEST_F(GoalQueueSuite, goalPreempting) {
 	move_base_msgs::MoveBaseGoal goal; 
-	std::unique_lock<std::mutex> slk(sleep_lock);
 
 	// One goal -> Cancel request -> Stop
 	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-	sleep_cv.wait(slk);
+	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
 	resumeExecuting();
 	cli->cancelGoal();
 	// ros::spinOnce(); 
-	sleep_cv.wait(slk, [this](){return execution;});// blocks only if lambda returns false
+	sleepExecuting();
 	// ASSERT_TRUE(goal_preempted);	
 	finishExecuting(); // Finish the goal
 	ros::spinOnce(); 
-	sleep_cv.wait(slk, [this](){return execution;});// blocks only if lambda returns false
+	sleepExecuting();
 // 	ASSERT_FALSE(qserv->isActive());
 
 	// Two goals -> Cancel current goal -> Start executing the second
@@ -219,7 +212,7 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false
+	sleepExecuting();
 	// ASSERT_TRUE(qserv->isActive());
 	ASSERT_TRUE(got_goal);
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
@@ -227,8 +220,7 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	// Cancelling the first goal - PITFALL
 	resumeExecuting();
 	cli->cancelGoal();
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false
-		// ros::Duration(1.0).sleep(); 
+	sleepExecuting();
 	// ros::spinOnce(); 
 	// ASSERT_TRUE(goal_preempted);
 	// Finish the preempted goal
@@ -239,7 +231,7 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false
+	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	// ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x); // call FINISH!
 	finishExecuting(); // Finish 2nd goal
@@ -251,14 +243,13 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 
 TEST_F(GoalQueueSuite, goalCancelling) {
 	move_base_msgs::MoveBaseGoal goal; 
-	std::unique_lock<std::mutex> slk(sleep_lock);
+	goal.target_pose.pose.position.x = 3.0;
 
 	// Two goals -> Cancel current goal -> Start executing the second
-	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
-	sleep_cv.wait(slk);
+	sleepExecuting();
 	ASSERT_TRUE(got_goal);
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
@@ -267,22 +258,22 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false
+	sleepExecuting();
+
+	// Cancelling the second goal
 	resumeExecuting();
 	cli->cancelGoal();
 	// ros::spinOnce(); 
-	sleep_cv.wait(slk, [this](){return execution;}); // blocks only if lambda returns false
-		//ASSERT_TRUE(goal_preempted); // TODO: Why is this failling? 
-	// ASSERT_TRUE(qserv->isActive());
+	sleepExecuting();
+	//ASSERT_TRUE(goal_preempted); // TODO: Why is this failling? 
+	ASSERT_TRUE(qserv->isActive());
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x); 
-	finishExecuting();
 	finishExecuting();
 	//ASSERT_FALSE(qserv->isActive()); // TODO: Why is this failling? 
 
 // 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
 }
 // Two more TEST_F missing
-*/
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "goal_queueing_test");
