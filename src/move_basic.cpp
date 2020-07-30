@@ -62,6 +62,7 @@ enum {
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber progressSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -118,6 +119,7 @@ class MoveBasic {
     double reverseWithoutTurningThreshold;
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+    void progressCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
     void sendCmd(double angular, double linear);
@@ -132,7 +134,7 @@ class MoveBasic {
     MoveBasic();
 
     void run();
-
+    
     bool moveLinear(tf2::Transform& goalInDriving,
                     const std::string& planningFrame,
                     const std::string& drivingFrame);
@@ -142,6 +144,15 @@ class MoveBasic {
 
     tf2::Transform goalInPlanning;
 };
+
+
+
+// Get distance between two poses
+// TODO: Understand this better whether it should be a static function
+static double distance(const geometry_msgs::PoseStamped& p1, const geometry_msgs::PoseStamped& p2)
+{
+ return sqrt((p1.pose.position.x - p2.pose.position.x) * (p1.pose.position.x - p2.pose.position.x) + (p1.pose.position.y - p2.pose.position.y) * (p1.pose.position.y - p2.pose.position.y));
+}
 
 
 // Radians to degrees
@@ -263,6 +274,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
+    progressSub = nh.subscribe("/move_base_simple/goal", 1,
+		    		&MoveBasic::progressCallback, this);
+
     ros::NodeHandle actionNh("");
 
     actionServer.reset(new MoveBaseActionServer(actionNh, "move_base", 
@@ -308,6 +322,59 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     return true;
 }
 
+
+// Checking if goal is moving towards the goal - MOVE IT TO GOALCALLBACK?
+
+void MoveBasic::progressCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg) 
+{
+	tf2::Transform goal;
+	tf2::fromMsg(msg->target_pose.pose, goal);
+	std::string frameId = msg->target_pose.header.frame_id;
+
+	//  Needed for RobotCommander
+	if (frameId[0] == '/')
+		frameId = frameId.substr(1);
+
+	double x, y, yaw;
+	getPose(goal, x, y, yaw);
+	ROS_INFO("MoveBasic: Received goal %f %f %f %s", x, y, rad2deg(yaw), frameId.c_str());
+	
+	if (std::isnan(yaw)) {
+		abortGoal("MoveBasic: Aborting goal because an invalid orientation was specified");
+		return;
+	}
+
+	geometry_msgs::PoseStamped goal_pose;
+	goal_pose.pose.position.x = x;
+	goal_pose.pose.position.y = y;
+
+	tf2::Transform poseFrameId;
+	if (!getTransform(baseFrame, frameId, poseFrameId)) {
+		abortGoal("MoveBasic: Cannot determine robot pose in goal frame");
+		return;
+	}	
+	
+	double bot_x, bot_y, bot_yaw;
+	getPose(poseFrameId, bot_x, bot_y, bot_yaw);
+
+	geometry_msgs::PoseStamped robot_pose;
+	robot_pose.pose.position.x = bot_x;
+	robot_pose.pose.position.y = bot_y;
+
+	double dist;
+	dist = distance(robot_pose, goal_pose);
+	ROS_INFO("MoveBasic: Distance to goal %f", dist);
+	
+	// - reset if new goal
+	// - else compare last and current distance to the goal, if not decreasing abort it
+	// - setting threshold
+	/*
+	   - get robot and goal pose
+	   - calcute the distance
+	   - check if distance decreasing
+	   - set a threshold for how much can change in the opposite direction, otherwise abort
+	*/
+}
 
 
 // Called when a simple goal message is received
