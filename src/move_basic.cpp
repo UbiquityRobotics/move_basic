@@ -94,6 +94,7 @@ class MoveBasic {
 
     int rotationAttempts;
     double localizationLatency;
+    double last;
 
     double robotWidth;
     double frontToLidar;
@@ -689,13 +690,15 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     tf2::Transform goalInBase = poseDriving * goalInDriving;
     tf2::Vector3 remaining = goalInBase.getOrigin();
     bool forward = (remaining.x() > 0);
+    double prevDistance = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
+
 
     // For lateral control
     double lateralIntegral = 0.0;
     double lateralError = 0.0;
     double prevLateralError = 0.0;
     double lateralDiff = 0.0;
-    ros::Time sensorTime;
+    ros::Time sensorTime; 
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -724,6 +727,18 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
+
+	double timeout = 5.0;
+	if (distRemaining < prevDistance) {
+		double current = ros::Time::now().toSec();
+		if (current-last > timeout) {
+			abortGoal("MoveBasic: Goal update timeout.");		
+		}
+		prevDistance = distRemaining;
+		last = current;
+	}
+
+	// TODO: Distance abortion
 
         tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
