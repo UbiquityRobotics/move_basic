@@ -91,6 +91,13 @@ protected:
 			); 
 	}
 
+	void updateExecuting() {	
+		std::unique_lock<std::mutex> ulk(update_lock);
+		sleep_cv.wait(ulk, 
+				[this](){return !execution;}
+			); 
+	}
+
 	void resetFlags() {
 		got_goal = false;
 		goal_preempted = false;
@@ -116,6 +123,7 @@ protected:
 	bool resume_executing;
 	bool execute_done;
 	std::mutex sleep_lock;
+	std::mutex update_lock;
 	std::mutex execute_lock;
 	std::mutex execute_done_lock;
 	std::condition_variable sleep_cv;
@@ -126,22 +134,6 @@ protected:
 	std::unique_ptr<actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction>> cli;
 };
 
-TEST_F(GoalQueueSuite, establishDuplex) {
-	move_base_msgs::MoveBaseGoal goal; 
-
-	goal.target_pose.pose.position.x = 3.0;
-	cli->sendGoal(goal);
-	ros::spinOnce(); 
-
- 	sleepExecuting();
-	EXPECT_TRUE(got_goal);
-	EXPECT_FALSE(goal_preempted);
-	EXPECT_FALSE(next_goal_available);
-	EXPECT_EQ(3.0, received_goal->target_pose.pose.position.x);
-	finishExecuting();
-	ros::Duration(0.5).sleep(); 
-	EXPECT_FALSE(qserv->isActive());
-}
 
 TEST_F(GoalQueueSuite, addGoalWhileExecuting) { 
 	move_base_msgs::MoveBaseGoal goal; 
@@ -162,7 +154,7 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	ros::spinOnce(); 
 
 	resumeExecuting();
-	ros::Duration(0.5).sleep();
+	updateExecuting();
 	sleepExecuting();
  	EXPECT_TRUE(next_goal_available); 
 	
@@ -175,7 +167,6 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	ros::Duration(0.5).sleep(); 
 	EXPECT_TRUE(goal_preempted); 
  	finishExecuting(); // Finish 2nd (canceled) goal
-	ros::Duration(0.5).sleep(); 
 	
 	// New goal
 	goal.target_pose.pose.position.x = 13.0;
@@ -192,7 +183,7 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 // 	- start executing the new goal in queue (after the current)
 }
 
-TEST_F(GoalQueueSuite, goalPreempting) {
+TEST_F(GoalQueueSuite, stopAfterCancel) {
 	move_base_msgs::MoveBaseGoal goal; 
 
 	// One goal -> Cancel request -> Stop
@@ -207,14 +198,23 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	ros::Duration(1.0).sleep();
 	ros::spinOnce(); 
 	resumeExecuting();
-	ros::Duration(0.5).sleep();
+	updateExecuting();
+	sleepExecuting();
 
 	EXPECT_TRUE(goal_preempted);	
 	finishExecuting(); // Finish the goal
 	ros::Duration(0.5).sleep();
  	EXPECT_FALSE(qserv->isActive());
 
+//	- if a cancel request is received for the current goal, set it as preempted (DONE)
+//	- if no goal, stop (DONE)
+}
+
+TEST_F(GoalQueueSuite, continueAfterCancel) {
+	move_base_msgs::MoveBaseGoal goal;
+
 	// Two goals -> Cancel current goal -> Start executing the second
+	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	sleepExecuting();
@@ -226,7 +226,7 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	ros::Duration(1.0).sleep();
 	ros::spinOnce(); 
 	resumeExecuting();
-	ros::Duration(0.5).sleep();
+	updateExecuting();
 	sleepExecuting();
 	ASSERT_TRUE(goal_preempted);
 	finishExecuting(); // Finish the preempted goal
@@ -242,7 +242,6 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	
 //	- if a cancel request is received for the current goal, set it as preempted (DONE)
 //	- if there another goal, start executing it
-//	- if no goal, stop (DONE)
 }
 
 TEST_F(GoalQueueSuite, goalCancelling) {
@@ -263,7 +262,7 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	ros::spinOnce(); 
 
 	resumeExecuting();
-	ros::Duration(0.5).sleep(); // Needs to wait so the execution variable can update
+	updateExecuting();
 	sleepExecuting();
 	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
 	EXPECT_TRUE(next_goal_available);
