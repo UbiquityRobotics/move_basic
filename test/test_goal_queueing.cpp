@@ -192,7 +192,6 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 // 	- start executing the new goal in queue (after the current)
 }
 
-/*
 TEST_F(GoalQueueSuite, goalPreempting) {
 	move_base_msgs::MoveBaseGoal goal; 
 
@@ -201,48 +200,44 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 	sleepExecuting();
-	ASSERT_TRUE(got_goal);
-	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
+	EXPECT_TRUE(got_goal);
+	EXPECT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
 	cli->cancelGoal();
+	ros::Duration(1.0).sleep();
 	ros::spinOnce(); 
 	resumeExecuting();
-	// ros::spinOnce(); 
-	sleepExecuting();
-	// ASSERT_TRUE(goal_preempted);	
+	ros::Duration(0.5).sleep();
+
+	EXPECT_TRUE(goal_preempted);	
 	finishExecuting(); // Finish the goal
-	ros::spinOnce(); 
-	sleepExecuting();
-// 	ASSERT_FALSE(qserv->isActive());
+	ros::Duration(0.5).sleep();
+ 	EXPECT_FALSE(qserv->isActive());
 
 	// Two goals -> Cancel current goal -> Start executing the second
-	// First goal
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-
 	sleepExecuting();
-	// ASSERT_TRUE(qserv->isActive());
-	ASSERT_TRUE(got_goal);
-	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
+	EXPECT_TRUE(got_goal);
+	EXPECT_EQ(3.0, received_goal->target_pose.pose.position.x);
 
 	// Cancelling the first goal - PITFALL
 	cli->cancelGoal();
+	ros::Duration(1.0).sleep();
 	ros::spinOnce(); 
 	resumeExecuting();
+	ros::Duration(0.5).sleep();
 	sleepExecuting();
-	// ros::spinOnce(); 
-	// ASSERT_TRUE(goal_preempted);
-	// Finish the preempted goal
-	finishExecuting(); // Finish 1st goal
+	ASSERT_TRUE(goal_preempted);
+	finishExecuting(); // Finish the preempted goal
 	
 	// "Second" goal
 	goal.target_pose.pose.position.x = 7.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-
 	sleepExecuting();
-	ASSERT_TRUE(got_goal);
-	// ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x); // call FINISH!
+	EXPECT_TRUE(got_goal);
+	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x); 
 	finishExecuting(); // Finish 2nd goal
 	
 //	- if a cancel request is received for the current goal, set it as preempted (DONE)
@@ -250,7 +245,6 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 //	- if no goal, stop (DONE)
 }
 
-*/
 TEST_F(GoalQueueSuite, goalCancelling) {
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
@@ -289,6 +283,7 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 
 // 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
 }
+
 // Two more TEST_F missing
 
 int main(int argc, char **argv) {
