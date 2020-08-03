@@ -97,6 +97,7 @@ class MoveBasic {
 
     double last;
     double abortTimeout;
+    double distThreshold;
 
     double robotWidth;
     double frontToLidar;
@@ -246,8 +247,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                       reverseWithoutTurningThreshold, 0.5);
     
     // Timeout for distance to goal update
-    nh.param<double>("abort_timeout", 
-		      abortTimeout, 5.0);
+    nh.param<double>("abort_timeout", abortTimeout, 5.0);
+
+    nh.param<double>("distance_threshold", distThreshold, 1.0);
 
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
@@ -734,6 +736,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
 
+// 
 	if (distRemaining < prevDistance) {
 		double current = ros::Time::now().toSec();
 		if (current-last > abortTimeout) {
@@ -743,8 +746,13 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 		last = current;
 	}
 
-	// TODO: Distance abortion
-
+	if (prevDistance+distThreshold < distRemaining) {
+		abortGoal("MoveBasic: Goal distance threshold exceeded.");		
+	} 
+	else {
+		prevDistance = distRemaining;
+	}
+// 
         tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
         getPose(initialBaseToCurrent, cx, cy, cyaw);
