@@ -48,7 +48,7 @@ protected:
 				//lambda function to wait on our bool variables 
 				[this](){return finish_executing || resume_executing;} // blocks only if lambda returns false
 			);
-			// execution = false;
+			execution = false;
 			// We were requested to stop, so we stop
 			if (finish_executing) {
 				break;
@@ -89,8 +89,6 @@ protected:
 		sleep_cv.wait(slk, 
 				[this](){return execution;}
 			); 
-		// ros::Duration(1.0).sleep();
-	 // 	execution = false; // After adding this, things dont work!
 	}
 
 	void resetFlags() {
@@ -143,7 +141,7 @@ TEST_F(GoalQueueSuite, establishDuplex) {
 	finishExecuting();
 }
 
-// TODO: After cancel call do ros-spin and delay
+/*
 TEST_F(GoalQueueSuite, addGoalWhileExecuting) { 
 	move_base_msgs::MoveBaseGoal goal; 
 
@@ -193,7 +191,6 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 // 	- start executing the new goal in queue (after the current)
 }
 
-/*
 TEST_F(GoalQueueSuite, goalPreempting) {
 	move_base_msgs::MoveBaseGoal goal; 
 
@@ -251,6 +248,7 @@ TEST_F(GoalQueueSuite, goalPreempting) {
 //	- if no goal, stop (DONE)
 }
 
+*/
 TEST_F(GoalQueueSuite, goalCancelling) {
 	move_base_msgs::MoveBaseGoal goal; 
 	goal.target_pose.pose.position.x = 3.0;
@@ -268,24 +266,29 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
+	resumeExecuting();
+	ros::Duration(0.5).sleep(); // Needs to wait so the execution variable can update
 	sleepExecuting();
+	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x);
+	EXPECT_TRUE(next_goal_available);
 
 	// Cancelling the second goal
+	EXPECT_TRUE(qserv->isActive());
 	cli->cancelGoal();
+	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
-	resumeExecuting();
-	// ros::spinOnce(); 
-	sleepExecuting();
-	//ASSERT_TRUE(goal_preempted); // TODO: Why is this failling? 
-	ASSERT_TRUE(qserv->isActive());
-	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x); 
-	finishExecuting();
-	//ASSERT_FALSE(qserv->isActive()); // TODO: Why is this failling? 
+ 	finishExecuting(); // finish 1st goal
+ 	ros::Duration(1.0).sleep(); // Needs to wait so the executeCallback can finish
+
+	EXPECT_TRUE(goal_preempted); // Must be checked in the goal-thread that is cancelled 
+	finishExecuting(); // Finish the cancelled goal
+	ros::Duration(1.0).sleep(); 
+	ASSERT_FALSE(qserv->isActive());  
 
 // 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
 }
 // Two more TEST_F missing
-*/
+
 int main(int argc, char **argv) {
     ros::init(argc, argv, "goal_queueing_test");
     testing::InitGoogleTest(&argc, argv);
