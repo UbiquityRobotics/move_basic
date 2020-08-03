@@ -94,7 +94,9 @@ class MoveBasic {
 
     int rotationAttempts;
     double localizationLatency;
+
     double last;
+    double abortTimeout;
 
     double robotWidth;
     double frontToLidar;
@@ -242,6 +244,10 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Reverse distances for which rotation won't be performed
     nh.param<double>("reverse_without_turning_threshold",
                       reverseWithoutTurningThreshold, 0.5);
+    
+    // Timeout for distance to goal update
+    nh.param<double>("abort_timeout", 
+		      abortTimeout, 5.0);
 
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
@@ -728,10 +734,9 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
 
-	double timeout = 5.0;
 	if (distRemaining < prevDistance) {
 		double current = ros::Time::now().toSec();
-		if (current-last > timeout) {
+		if (current-last > abortTimeout) {
 			abortGoal("MoveBasic: Goal update timeout.");		
 		}
 		prevDistance = distRemaining;
