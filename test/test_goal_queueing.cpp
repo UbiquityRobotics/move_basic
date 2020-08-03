@@ -139,9 +139,10 @@ TEST_F(GoalQueueSuite, establishDuplex) {
 	EXPECT_FALSE(next_goal_available);
 	EXPECT_EQ(3.0, received_goal->target_pose.pose.position.x);
 	finishExecuting();
+	ros::Duration(0.5).sleep(); 
+	EXPECT_FALSE(qserv->isActive());
 }
 
-/*
 TEST_F(GoalQueueSuite, addGoalWhileExecuting) { 
 	move_base_msgs::MoveBaseGoal goal; 
 
@@ -149,7 +150,6 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	goal.target_pose.pose.position.x = 3.0;
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
-
 	sleepExecuting();
 	EXPECT_TRUE(got_goal);
 	EXPECT_FALSE(goal_preempted);
@@ -161,29 +161,30 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	cli->sendGoal(goal);
 	ros::spinOnce(); 
 
+	resumeExecuting();
+	ros::Duration(0.5).sleep();
 	sleepExecuting();
-// 	ASSERT_TRUE(next_goal_available); // TODO: Why is this failling?
+ 	EXPECT_TRUE(next_goal_available); 
 	
-	// Cancelling the last goal - TODO: Doesnt work!
-	cli->cancelGoal(); // Cancels the last goal sent
-	ros::spinOnce(); 
+	// Cancel the last goal sent
+	cli->cancelGoal(); 
 	ros::Duration(1.0).sleep(); 
-	EXPECT_EQ(3.0, received_goal->target_pose.pose.position.x);
+	ros::spinOnce(); 
+	EXPECT_EQ(3.0, received_goal->target_pose.pose.position.x); // Making sure we are in the first goal thread
  	finishExecuting(); // Finish 1st goal
-	ros::Duration(3.0).sleep(); 
-	// ASSERT_TRUE(goal_preempted); // TODO:  Why is this failling?
+	ros::Duration(0.5).sleep(); 
+	EXPECT_TRUE(goal_preempted); 
  	finishExecuting(); // Finish 2nd (canceled) goal
-	ros::Duration(3.0).sleep(); 
+	ros::Duration(0.5).sleep(); 
 	
 	// New goal
 	goal.target_pose.pose.position.x = 13.0;
 	cli->sendGoal(goal); 
 	ros::spinOnce(); 
-
 	sleepExecuting();
 	EXPECT_TRUE(got_goal);
 	EXPECT_FALSE(goal_preempted);
-	EXPECT_EQ(13.0, received_goal->target_pose.pose.position.x); // BUG: X=7 (from canceled goal) 
+	EXPECT_EQ(13.0, received_goal->target_pose.pose.position.x);  
 	finishExecuting(); // Finish new goal
 
 // 	- if another goal is received add it to the queue (DONE) 
@@ -191,6 +192,7 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 // 	- start executing the new goal in queue (after the current)
 }
 
+/*
 TEST_F(GoalQueueSuite, goalPreempting) {
 	move_base_msgs::MoveBaseGoal goal; 
 
@@ -278,11 +280,11 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	ros::Duration(1.0).sleep(); 
 	ros::spinOnce(); 
  	finishExecuting(); // finish 1st goal
- 	ros::Duration(1.0).sleep(); // Needs to wait so the executeCallback can finish
+ 	ros::Duration(0.5).sleep(); // Needs to wait so the executeCallback can finish
 
 	EXPECT_TRUE(goal_preempted); // Must be checked in the goal-thread that is cancelled 
 	finishExecuting(); // Finish the cancelled goal
-	ros::Duration(1.0).sleep(); 
+	ros::Duration(0.5).sleep(); 
 	ASSERT_FALSE(qserv->isActive());  
 
 // 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
