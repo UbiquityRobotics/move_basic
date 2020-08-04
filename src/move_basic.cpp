@@ -746,13 +746,15 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 		last = current;
 	}
 
-	if (prevDistance+distThreshold < distRemaining) {
-		abortGoal("MoveBasic: Goal distance threshold exceeded.");		
-	} 
-	else {
-		prevDistance = distRemaining;
+	if (distRemaining < prevDistance) {
+		if (prevDistance+distThreshold < distRemaining) {
+			abortGoal("MoveBasic: Goal distance threshold exceeded.");		
+		} 
+		else {
+			prevDistance = distRemaining;
+		}
 	}
-// 
+
         tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
         getPose(initialBaseToCurrent, cx, cy, cyaw);
