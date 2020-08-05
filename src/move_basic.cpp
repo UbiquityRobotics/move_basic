@@ -736,19 +736,18 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
 
-// 
-	if (distRemaining < prevDistance) {
+	if ((distRemaining < prevDistance) && (abortTimeout != 0)) {
 		double current = ros::Time::now().toSec();
 		if (current-last > abortTimeout) {
-			abortGoal("MoveBasic: Goal update timeout.");		
+			abortGoal("MoveBasic: No progress towards goal for longer than timeout.");		
 		}
 		prevDistance = distRemaining;
 		last = current;
 	}
 
-	if (distRemaining < prevDistance) {
+	if ((distRemaining < prevDistance) && (distThreshold != 0)) {
 		if (prevDistance+distThreshold < distRemaining) {
-			abortGoal("MoveBasic: Goal distance threshold exceeded.");		
+			abortGoal("MoveBasic: Detected that we are moving further from the goal, aborting.");		
 		} 
 		else {
 			prevDistance = distRemaining;
