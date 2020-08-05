@@ -201,6 +201,7 @@ TEST_F(GoalQueueSuite, stopAfterCancel) {
 	resumeExecuting();
 	updateExecuting();
 	sleepExecuting();
+	ros::Duration(0.5).sleep();
 	EXPECT_TRUE(goal_preempted);	
 	finishExecuting(); 
 	ros::Duration(0.5).sleep();
