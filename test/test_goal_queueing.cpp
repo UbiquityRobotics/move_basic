@@ -91,6 +91,7 @@ protected:
 			); 
 	}
 
+	// Helper function to wait for execution variable to update
 	void updateExecuting() {	
 		std::unique_lock<std::mutex> ulk(update_lock);
 		sleep_cv.wait(ulk, 
@@ -177,11 +178,7 @@ TEST_F(GoalQueueSuite, addGoalWhileExecuting) {
 	EXPECT_TRUE(got_goal);
 	EXPECT_FALSE(goal_preempted);
 	EXPECT_EQ(13.0, received_goal->target_pose.pose.position.x);  
-	finishExecuting(); // Finish new goal
-
-// 	- if another goal is received add it to the queue (DONE) 
-// 	- if the queue full, set the next goal as preempted - explicitly called! - so cancelling the next goal and adding new to the queue
-// 	- start executing the new goal in queue (after the current)
+	finishExecuting();
 }
 
 TEST_F(GoalQueueSuite, stopAfterCancel) {
@@ -202,13 +199,10 @@ TEST_F(GoalQueueSuite, stopAfterCancel) {
 	updateExecuting();
 	sleepExecuting();
 	ros::Duration(0.5).sleep();
-// 	EXPECT_TRUE(goal_preempted);	
+// 	EXPECT_TRUE(goal_preempted); // TODO: Sometimes failling	
 	finishExecuting(); 
 	ros::Duration(0.5).sleep();
  	EXPECT_FALSE(qserv->isActive());
-
-//	- if a cancel request is received for the current goal, set it as preempted (DONE)
-//	- if no goal, stop (DONE)
 }
 
 TEST_F(GoalQueueSuite, continueAfterCancel) {
@@ -230,7 +224,7 @@ TEST_F(GoalQueueSuite, continueAfterCancel) {
 	updateExecuting();
 	sleepExecuting();
 	ASSERT_TRUE(goal_preempted);
-	finishExecuting(); // Finish the preempted goal
+	finishExecuting(); 
 	
 	// "Second" goal
 	goal.target_pose.pose.position.x = 7.0;
@@ -239,10 +233,7 @@ TEST_F(GoalQueueSuite, continueAfterCancel) {
 	sleepExecuting();
 	EXPECT_TRUE(got_goal);
 	ASSERT_EQ(7.0, received_goal->target_pose.pose.position.x); 
-	finishExecuting(); // Finish 2nd goal
-	
-//	- if a cancel request is received for the current goal, set it as preempted (DONE)
-//	- if there another goal, start executing it
+	finishExecuting(); 
 }
 
 TEST_F(GoalQueueSuite, goalCancelling) {
@@ -264,7 +255,7 @@ TEST_F(GoalQueueSuite, goalCancelling) {
 	resumeExecuting();
 	updateExecuting();
 	sleepExecuting();
-	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x); // Making sure we are in the first goal thread
+	ASSERT_EQ(3.0, received_goal->target_pose.pose.position.x); 
 	EXPECT_TRUE(next_goal_available);
 
 	// Cancelling the second goal
@@ -275,10 +266,8 @@ TEST_F(GoalQueueSuite, goalCancelling) {
  	finishExecuting(); // finish 1st goal
  	ros::Duration(0.5).sleep(); // Needs to wait so the executeCallback can finish
 
-	EXPECT_TRUE(goal_preempted); // Must be checked in the goal-thread that is cancelled 
+	EXPECT_TRUE(goal_preempted); 
 	finishExecuting(); // Finish the cancelled goal
-
-// 	- if a cancel request on the "next_goal" received, remove it from the queue and set it as cancelled
 }
 
 // Two more TEST_F missing
