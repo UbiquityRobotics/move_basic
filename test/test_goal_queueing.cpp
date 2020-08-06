@@ -199,7 +199,8 @@ TEST_F(GoalQueueSuite, stopAfterCancel) {
 	updateExecuting();
 	sleepExecuting();
 	ros::Duration(0.5).sleep();
-// 	EXPECT_TRUE(goal_preempted); // TODO: Sometimes failling	
+	// TODO: Investigate why line 203 is failling - succeed only 7/10 times
+// 	EXPECT_TRUE(goal_preempted); 
 	finishExecuting(); 
 	ros::Duration(0.5).sleep();
  	EXPECT_FALSE(qserv->isActive());
