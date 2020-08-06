@@ -95,10 +95,6 @@ class MoveBasic {
     int rotationAttempts;
     double localizationLatency;
 
-    double last;
-    double abortTimeout;
-    double distThreshold;
-
     double robotWidth;
     double frontToLidar;
     double obstacleWaitLimit;
@@ -141,7 +137,6 @@ class MoveBasic {
                     const std::string& planningFrame,
                     const std::string& drivingFrame);
     bool rotate(double requestedYaw,
-                const std::string& planningFrame,
                 const std::string& drivingFrame);
 
     tf2::Transform goalInPlanning;
@@ -245,11 +240,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Reverse distances for which rotation won't be performed
     nh.param<double>("reverse_without_turning_threshold",
                       reverseWithoutTurningThreshold, 0.5);
-    
-    // Timeout for distance to goal update
-    nh.param<double>("abort_timeout", abortTimeout, 5.0);
-
-    nh.param<double>("distance_threshold", distThreshold, 1.0);
 
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
@@ -489,7 +479,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             if (std::abs(requestedYaw) < angularTolerance) {
                 break;
             }
-            if (!rotate(requestedYaw, planningFrame, drivingFrame)) {
+            if (!rotate(requestedYaw, drivingFrame)) {
                 return;
             }
             sleep(localizationLatency);
@@ -527,7 +517,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     getPose(finalPose, x, y, yaw);
-    rotate(goalYaw - yaw, planningFrame, drivingFrame);
+    rotate(goalYaw - yaw, drivingFrame);
 
 /*
     sleep(10);
@@ -588,8 +578,7 @@ void MoveBasic::run()
 
 // Rotate relative to current orientation
 
-bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
-                       const std::string& drivingFrame)
+bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 {
     ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(yaw));
 
@@ -698,15 +687,13 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     tf2::Transform goalInBase = poseDriving * goalInDriving;
     tf2::Vector3 remaining = goalInBase.getOrigin();
     bool forward = (remaining.x() > 0);
-    double prevDistance = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
-
 
     // For lateral control
     double lateralIntegral = 0.0;
     double lateralError = 0.0;
     double prevLateralError = 0.0;
     double lateralDiff = 0.0;
-    ros::Time sensorTime; 
+    ros::Time sensorTime;
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -734,25 +721,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         }
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
-        double distRemaining = sqrt(linear.x() * linear.x() + linear.y() * linear.y());
-
-	if ((distRemaining < prevDistance) && (abortTimeout != 0)) {
-		double current = ros::Time::now().toSec();
-		if (current-last > abortTimeout) {
-			abortGoal("MoveBasic: No progress towards goal for longer than timeout.");		
-		}
-		prevDistance = distRemaining;
-		last = current;
-	}
-
-	if ((distRemaining < prevDistance) && (distThreshold != 0)) {
-		if (prevDistance+distThreshold < distRemaining) {
-			abortGoal("MoveBasic: Detected that we are moving further from the goal, aborting.");		
-		} 
-		else {
-			prevDistance = distRemaining;
-		}
-	}
+        double distRemaining = sqrt(remaining.x() * remaining.x() + remaining.y() * remaining.y());
 
         tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
         double cx, cy, cyaw;
