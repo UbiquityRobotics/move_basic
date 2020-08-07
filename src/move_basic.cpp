@@ -141,7 +141,6 @@ class MoveBasic {
                     const std::string& planningFrame,
                     const std::string& drivingFrame);
     bool rotate(double requestedYaw,
-                const std::string& planningFrame,
                 const std::string& drivingFrame);
 
     tf2::Transform goalInPlanning;
@@ -489,7 +488,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             if (std::abs(requestedYaw) < angularTolerance) {
                 break;
             }
-            if (!rotate(requestedYaw, planningFrame, drivingFrame)) {
+            if (!rotate(requestedYaw, drivingFrame)) {
                 return;
             }
             sleep(localizationLatency);
@@ -527,7 +526,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     getPose(finalPose, x, y, yaw);
-    rotate(goalYaw - yaw, planningFrame, drivingFrame);
+    rotate(goalYaw - yaw, drivingFrame);
 
 /*
     sleep(10);
@@ -588,8 +587,7 @@ void MoveBasic::run()
 
 // Rotate relative to current orientation
 
-bool MoveBasic::rotate(double yaw, const std::string& planningFrame,
-                       const std::string& drivingFrame)
+bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 {
     ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(yaw));
 
