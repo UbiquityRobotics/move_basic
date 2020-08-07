@@ -844,12 +844,17 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             velocity = 0;
         }
 
-        if (abs(remaining.x()) < linearTolerance) {
-            velocity = 0;
-            done = true;
-            ROS_INFO("MoveBasic: Done linear, error %f, %f meters",
-                     remaining.x(), remaining.y());
-        }
+	if (distTravelled >= requestedDistance) {
+		if (distRemaining > linearTolerance) {
+			abortGoal("MoveBasic: Aborting due to linear error");
+		}
+		else { 
+			velocity = 0;
+			done = true;
+        		ROS_INFO("MoveBasic: Done linear, error %f, %f meters", remaining.x(), remaining.y());
+		}
+	}
+
         if (!forward) {
             velocity = -velocity;
         }
