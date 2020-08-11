@@ -98,6 +98,8 @@ class MoveBasic {
     double robotWidth;
     double frontToLidar;
     double obstacleWaitLimit;
+    
+    double previousRotation;
 
     std::string preferredPlanningFrame;
     std::string alternatePlanningFrame;
@@ -407,7 +409,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     tf2::Transform poseFrameId;
     if (!getTransform(baseFrame, frameId, poseFrameId)) {
-         abortGoal("MoveBasic: Cannot determine robot pose in goal frame");
+         abortGoal("MoveBasic: Cannot determine robot pose in goal frame(line 410)");
          return;
     }
     getPose(poseFrameId, x, y, yaw);
@@ -427,7 +429,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
                   preferredDrivingFrame.c_str(), alternateDrivingFrame.c_str());
          if (!getTransform(alternateDrivingFrame,
                            baseFrame, currentDrivingBase)) {
-             abortGoal("MoveBasic: Cannot determine robot pose in driving frame");
+             abortGoal("MoveBasic: Cannot determine robot pose in driving frame(line 430)");
              return;
          }
          else {
@@ -439,7 +441,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     if (!transformPose(frameId, drivingFrame, goal, goalInDriving)) {
-         abortGoal("MoveBasic: Cannot determine goal pose in driving frame");
+         abortGoal("MoveBasic: Cannot determine goal pose in driving frame(line 442)");
          return;
     }
 
@@ -499,7 +501,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         {
             tf2::Transform poseFrameIdFinal;
             if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
-                 ROS_WARN("MoveBasic: Cannot determine robot pose in goal frame");
+                 ROS_WARN("MoveBasic: Cannot determine robot pose in goal frame(line 502)");
             }
             tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
                                          poseFrameId.getOrigin();
@@ -603,8 +605,9 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         ros::spinOnce();
         r.sleep();
 
-        double x, y, currentYaw;
-        tf2::Transform poseDriving;
+	// TODO: Already defined?
+        // TODO: double x, y, currentYaw;
+        // TODO: tf2::Transform poseDriving;
         if (!getTransform(baseFrame, drivingFrame, poseDriving)) {
             abortGoal("MoveBasic: Cannot determine robot pose for rotation");
             return false;
@@ -621,13 +624,13 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
               std::sqrt(2.0 * angularAcceleration *
                 (remaining - angularTolerance))));
 
-        double velocity = 0;
+        double angular_velocity = 0;
 
         if (angleRemaining < 0.0) {
-            velocity = -speed;
+            angular_velocity = -speed;
         }
         else {
-            velocity = speed;
+            angular_velocity = speed;
         }
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
@@ -638,17 +641,17 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping rotation due to preempt");
             done = true;
-            velocity = 0;
+            angular_velocity = 0;
         }
 
         //ROS_INFO("%f %f %f", rad2deg(angleRemaining), angleRemaining, velocity);
 
         if (std::abs(angleRemaining) < angularTolerance || oscillations > 2) {
-            velocity = 0;
+            angular_velocity = 0;
             done = true;
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
         }
-        sendCmd(velocity, 0);
+        sendCmd(angular_velocity, 0);
     }
     return done;
 }
@@ -729,7 +732,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
 
-        double velMult = 1.0;
 
         // stick to planned path
         lateralError = sideRecoverWeight * remaining.y();
@@ -767,6 +769,15 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         // Clamp rotation
         rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
                                                           rotation));
+	/*
+	// If goal passed, the orientation turns around
+	// TODO: Test it!
+	bool goal_passed = false;
+	double error_rotation = rotation - previousRotation;
+	if (error_rotation > 90 || error_rotation < 90) {
+		goal_passed = true;
+	}
+	*/
 
         // Limit angular deviation from planned path to prevent turning around
         if (cyaw > maxAngularDev && rotation < 0) {
@@ -844,14 +855,26 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             velocity = 0;
         }
 
-	if (distTravelled >= requestedDistance) {
-		if (distRemaining > linearTolerance) {
-			abortGoal("MoveBasic: Aborting due to linear error");
-		}
-		else { 
+	// TODO: Motor controller speed command noise "???"
+        double velMult = 1.0; // TODO: Experimental variable
+	double MOTOR_CONTROLLER_NOISE = 0.001;
+	if (velMult*distRemaining < MOTOR_CONTROLLER_NOISE) { // Check if velocity input lower than the noise level
+		if (!(actionServer->isNewGoalAvailable()) && (distRemaining < linearTolerance)) { // Checks if in tolerance range
 			velocity = 0;
 			done = true;
         		ROS_INFO("MoveBasic: Done linear, error %f, %f meters", remaining.x(), remaining.y());
+		}
+		/*
+		else if (actionServer->isNewGoalAvailable() && (distRemaining < linearTolerance || goal_passed)) {
+			// Keep the velocity
+			done = true;
+        		ROS_INFO("MoveBasic: Done linear, error %f, %f meters", remaining.x(), remaining.y());
+		}
+		*/
+		else {
+			velocity = 0;
+			done = false;
+			abortGoal("MoveBasic: Aborting due to linear error");
 		}
 	}
 
