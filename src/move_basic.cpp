@@ -844,8 +844,10 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             velocity = 0;
         }
 
-	if (distTravelled >= requestedDistance) {
-		if (distRemaining > linearTolerance) {
+	if (distTravelled >= requestedDistance) { // Travelling the requested distance (so much as the robot thinks it is
+		if (distRemaining > linearTolerance) { // Checks if in tolerance range
+			velocity = 0;
+			done = false;
 			abortGoal("MoveBasic: Aborting due to linear error");
 		}
 		else { 
