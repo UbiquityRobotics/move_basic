@@ -39,7 +39,6 @@ include_directories(${catkin_INCLUDE_DIRS} include)
 add_executable(move_basic src/collision_checker.cpp src/obstacle_points.cpp src/move_basic.cpp)
 add_dependencies(move_basic ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
-
 target_link_libraries(move_basic ${catkin_LIBRARIES})
 
 #############
@@ -73,5 +72,14 @@ if(CATKIN_ENABLE_TESTING)
                 src/obstacle_points.cpp
                 test/test_obstacle_points.cpp)
         target_link_libraries(obstacle_points_test ${catkin_LIBRARIES})
+	add_rostest_gtest(goal_queueing_test test/goal_queueing.test 
+#		src/move_basic.cpp
+		test/test_goal_queueing.cpp)
+	target_link_libraries(goal_queueing_test ${catkin_LIBRARIES})	
 endif()
 
+
+# add_executable(goal_server src/move_basic.cpp)
+# target_link_libraries(goal_server ${catkin_LIBRARIES})
+# add_executable(goal_client test/test_goal_queueing.cpp)
+# target_link_libraries(goal_client ${catkin_LIBRARIES})
