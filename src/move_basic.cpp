@@ -95,8 +95,11 @@ class MoveBasic {
     int rotationAttempts;
     double localizationLatency;
 
-    double abortTimeout;
+    double abortTimeoutSecs;
     double distThreshold;
+
+    double velMult;
+    double velThreshold;
 
     double robotWidth;
     double frontToLidar;
@@ -245,8 +248,12 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Reverse distances for which rotation won't be performed
     nh.param<double>("reverse_without_turning_threshold",
                       reverseWithoutTurningThreshold, 0.5);
-    nh.param<double>("abort_timeout", abortTimeout, 30.0);
+    nh.param<double>("abort_timeout", abortTimeoutSecs, 60.0);
     nh.param<double>("distance_threshold", distThreshold, 1.0);
+
+    // Changing this two variables affects the reference pose stopping accuracy, but it also regulates the deccelaration time
+    nh.param<double>("velocity_threshold", velThreshold, 0.002);
+    nh.param<double>("velocity_multiplier", velMult, 2.0);
 
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
@@ -693,11 +700,11 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     tf2::Vector3 remaining = goalInBase.getOrigin();
     bool forward = (remaining.x() > 0);
 
-    // For abort check
-    double last = ros::Time::now().toSec();
+    // For Abort check
+    ros::Time last = ros::Time::now();
+    ros::Duration abortTimeout(abortTimeoutSecs);
     double prevDistance = sqrt(remaining.x()*remaining.x() + remaining.y()*remaining.y());
-    double Pvelocity = 0;
-    bool first = false;
+    double controlVelocity = 0;
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -803,27 +810,22 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         }
 
 	// Control to reference pose 
-	double K = 1.5;
-	double MOTOR_CONTROLLER_REACTIVITY = 0.02; // Changing this variable affects the reference pose accuracy, but it also regulates the deccelaration time - TODO: If higher or equal than 0.4 throws exception
-	if ((Pvelocity < MOTOR_CONTROLLER_REACTIVITY) && first) { 
+	controlVelocity = velMult * distRemaining;
+	if (controlVelocity < velThreshold) { 
+		ROS_INFO("Remaining velocity: %f", controlVelocity);
+		sendCmd(0, 0);
 		if (distRemaining < linearTolerance) { // Checks if in tolerance range
-			sendCmd(0, 0);
         		ROS_INFO("MoveBasic: Done linear, error %f, %f meters", remaining.x(), remaining.y());
 			return true;
 		}
 		else {
-			sendCmd(0, 0);
 			abortGoal("MoveBasic: Aborting due to linear error");
 			return false;
 		}
 	}
-	else {
-		Pvelocity = K * distRemaining;
-		first = true;
-	}
 
         double velocity = std::max(minLinearVelocity,
-            std::min(std::min(maxLinearVelocity, Pvelocity), std::min(
+            std::min(std::min(maxLinearVelocity, controlVelocity), std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
               std::sqrt(0.5 * linearAcceleration *
                  std::min(obstacleDist, distRemaining)))));
@@ -868,15 +870,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         }
 
 	// Abort checks
-	if ((distRemaining < prevDistance) && (abortTimeout != 0)) {
-		double current = ros::Time::now().toSec();
-		if (current-last > abortTimeout) {
+	if (distRemaining < prevDistance) {
+		prevDistance = distRemaining;
+		if (ros::Time::now() - last > abortTimeout) {
 			abortGoal("MoveBasic: No progress towards goal for longer than timeout.");		
 			sendCmd(0, 0);
 			return false;
-		}
-		else {
-			prevDistance = distRemaining;
 		}
 	}
 	/*
