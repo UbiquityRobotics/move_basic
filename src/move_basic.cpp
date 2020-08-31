@@ -208,7 +208,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("min_angular_velocity", minAngularVelocity, 0.05);
     nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
-    nh.param<double>("angular_tolerance", angularTolerance, 0.01);
+    nh.param<double>("angular_tolerance", angularTolerance, 0.0005);
 
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
@@ -238,8 +238,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
-    nh.param<int>("rotation_attempts", rotationAttempts, 1);
-
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
 
@@ -250,7 +248,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("distance_threshold", distThreshold, 1.0);
 
     // Changing this two variables affects the reference pose stopping accuracy, but it also regulates the deccelaration time
-    nh.param<double>("velocity_threshold", velThreshold, 0.002);
+    nh.param<double>("velocity_threshold", velThreshold, 0.003);
     nh.param<double>("velocity_multiplier", velMult, 2.0);
 
     nh.param<std::string>("preferred_planning_frame",
@@ -275,6 +273,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                             &MoveBasic::goalCallback, this);
 
     ros::NodeHandle actionNh("");
+
 
     actionServer.reset(new MoveBaseActionServer(actionNh, "move_base", 
 	boost::bind(&MoveBasic::executeAction, this, _1)));
@@ -470,33 +469,26 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         (reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
 
     // Initial rotation to face goal
-    for (int i=0; i<rotationAttempts; i++) {
-        tf2::Transform goalInBase;
-        if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
-            ROS_WARN("MoveBasic: Cannot determine robot pose for rotation");
+    if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
+         ROS_WARN("MoveBasic: Cannot determine robot pose for rotation");
+         return;
+    }
+
+    if (dist > linearTolerance) {
+        double requestedYaw = atan2(linear.y(), linear.x());
+        if (reverseWithoutTurning) {
+            if (requestedYaw > 0.0) {
+                requestedYaw = -M_PI + requestedYaw;
+            }
+            else {
+                requestedYaw = M_PI - requestedYaw;
+            }
+        }
+
+        if (!rotate(requestedYaw, drivingFrame)) {
             return;
         }
-
-        if (dist > linearTolerance) {
-            double requestedYaw = atan2(linear.y(), linear.x());
-            ROS_INFO("REQUESTED YAW: %f", requestedYaw);
-            if (reverseWithoutTurning) {
-                if (requestedYaw > 0.0) {
-                    requestedYaw = -M_PI + requestedYaw;
-                }
-                else {
-                    requestedYaw = M_PI - requestedYaw;
-                }
-            }
-
-            if (std::abs(requestedYaw) < angularTolerance) {
-                break;
-            }
-            if (!rotate(requestedYaw, drivingFrame)) {
-                return;
-            }
-            sleep(localizationLatency);
-        }
+        sleep(localizationLatency);
     }
 
     // Do linear portion of goal
@@ -508,15 +500,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
         if (!moveLinear(goalInDriving, planningFrame, drivingFrame)) {
             return;
-        }
-        {
-            tf2::Transform poseFrameIdFinal;
-            if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
-                 ROS_WARN("MoveBasic: Cannot determine robot pose in goal frame");
-            }
-            tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
-                                         poseFrameId.getOrigin();
-            ROS_DEBUG("MoveBasic: Travelled %f %f\n", distTravelled.x(), distTravelled.y());
         }
 
         sleep(localizationLatency);
@@ -533,19 +516,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         getPose(finalPose, x, y, yaw);
         rotate(goalYaw - yaw, drivingFrame);
     }
-/*
-    sleep(10);
-    // Final sanity check
-    {
-        tf2::Transform poseFrameIdFinal;
-        if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
-             ROS_WARN("Cannot determine robot pose in goal frame");
-        }
-        tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
-                                     poseFrameId.getOrigin();
-        ROS_DEBUG("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
-    }
-*/
 
     actionServer->setSucceeded();
 }
@@ -601,17 +571,20 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
          abortGoal("MoveBasic: Cannot determine robot pose for rotation");
          return false;
     }
-
+    
     double x, y, currentYaw;
     getPose(poseDriving, x, y, currentYaw);
     double requestedYaw = currentYaw + yaw;
     normalizeAngle(requestedYaw);
 
-    bool done = false;
     ros::Rate r(50);
-
     int oscillations = 0;
     double prevAngleRemaining = 0;
+    bool done = false;
+
+    if (std::abs(yaw) < angularTolerance) {
+        done = true;
+    }
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -634,13 +607,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
                 (remaining - angularTolerance))));
 
         double angular_velocity = 0;
-
-        if (angleRemaining < 0.0) {
-            angular_velocity = -speed;
-        }
-        else {
-            angular_velocity = speed;
-        }
+        angular_velocity = (angleRemaining < 0.0) ? -speed : speed; 
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
             oscillations++;
@@ -656,6 +623,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         //ROS_INFO("%f %f %f", rad2deg(angleRemaining), angleRemaining, velocity);
 
         if (std::abs(angleRemaining) < angularTolerance || oscillations > 2) {
+            ROS_DEBUG("%d", oscillations);
             angular_velocity = 0;
             done = true;
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
