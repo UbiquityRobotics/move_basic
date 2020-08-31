@@ -30,7 +30,6 @@
  */
 
 #include <ros/ros.h>
-#include <tf/transform_datatypes.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -41,7 +40,6 @@
 #include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
-#include <move_basic/FollowMode.h>
 
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
@@ -481,6 +479,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
         if (dist > linearTolerance) {
             double requestedYaw = atan2(linear.y(), linear.x());
+            ROS_INFO("REQUESTED YAW: %f", requestedYaw);
             if (reverseWithoutTurning) {
                 if (requestedYaw > 0.0) {
                     requestedYaw = -M_PI + requestedYaw;
@@ -524,15 +523,16 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     // Final rotation as specified in goal
-    tf2::Transform finalPose;
-    if (!getTransform(baseFrame, drivingFrame, finalPose)) {
-         abortGoal("MoveBasic: Cannot determine robot pose for final rotation");
-         return;
+    if (!actionServer->isNewGoalAvailable()) {
+        tf2::Transform finalPose;
+        if (!getTransform(baseFrame, drivingFrame, finalPose)) {
+             abortGoal("MoveBasic: Cannot determine robot pose for final rotation");
+             return;
+        }
+
+        getPose(finalPose, x, y, yaw);
+        rotate(goalYaw - yaw, drivingFrame);
     }
-
-    getPose(finalPose, x, y, yaw);
-    rotate(goalYaw - yaw, drivingFrame);
-
 /*
     sleep(10);
     // Final sanity check
