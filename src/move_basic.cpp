@@ -487,7 +487,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     // Do linear portion of goal
-    ROS_INFO("MoveBasic: Requested distance %f", dist);
+    ROS_INFO("MoveBasic: Requested distance %f with linear tolerance of %f", dist,linearTolerance);
 
     if (std::abs(dist) > linearTolerance) {
         if (reverseWithoutTurning) {
@@ -844,11 +844,11 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             velocity = 0;
         }
 
-        if (abs(remaining.x()) < linearTolerance) {
+        if (std::abs(remaining.x()) < linearTolerance) {
             velocity = 0;
             done = true;
-            ROS_INFO("MoveBasic: Done linear, error %f, %f meters",
-                     remaining.x(), remaining.y());
+            ROS_INFO("MoveBasic: Done linear, error in X %f, Y %f meters. Tol %f ",
+                     remaining.x(), remaining.y(), linearTolerance);
         }
         if (!forward) {
             velocity = -velocity;
