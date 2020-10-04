@@ -84,6 +84,10 @@ class MoveBasic {
     double linearAcceleration;
     double linearTolerance;
 
+    bool nextGoalAvailable;
+    tf2::Transform nextGoalPose;
+    std::string frameIdNext;
+
     // PID parameters for controlling lateral error
     double lateralKp;
     double lateralKi;
@@ -102,7 +106,7 @@ class MoveBasic {
     double robotWidth;
     double frontToLidar;
     double obstacleWaitLimit;
-    
+
     double previousRotation;
 
     std::string preferredPlanningFrame;
@@ -213,7 +217,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.03);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.1);
+
+    nh.param<bool>("next_goal_available", nextGoalAvailable, false);
 
     // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 10.0);
@@ -275,7 +281,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     ros::NodeHandle actionNh("");
 
 
-    actionServer.reset(new MoveBaseActionServer(actionNh, "move_base", 
+    actionServer.reset(new MoveBaseActionServer(actionNh, "move_base",
 	boost::bind(&MoveBasic::executeAction, this, _1)));
 
     actionServer->start();
@@ -331,6 +337,22 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     actionGoal.goal.target_pose = *msg;
 
     goalPub.publish(actionGoal);
+
+    // isNewGoalAvailable() needs to update on an actionServer
+    std::condition_variable newgoal_cv;
+    std::mutex cv_m;
+    std::unique_lock<std::mutex> newgoal_lk(cv_m);
+    auto now = std::chrono::system_clock::now();
+    auto timeout = std::chrono::milliseconds(50);
+    newgoal_cv.wait_until(newgoal_lk,
+            now + timeout,
+            [this](){return actionServer->isNewGoalAvailable();}
+    );
+
+    // If there is a new goal store it
+    if(actionServer-> isNewGoalAvailable()) {
+        nextGoalAvailable = true;
+    }
 }
 
 
@@ -386,6 +408,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // An empty planning frame means to use what ever frame the goal is specified in.
     if (preferredPlanningFrame == "") {
        planningFrame = frameId;
+       // TODO: Do a transform
        goalInPlanning = goal;
        ROS_INFO("Planning in goal frame: %s\n", planningFrame.c_str());
     }
@@ -514,6 +537,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
 
         getPose(finalPose, x, y, yaw);
+        ROS_INFO("goalYaw: %f", goalYaw);
+        ROS_INFO("Yaw: %f", yaw);
         rotate(goalYaw - yaw, drivingFrame);
     }
 
@@ -571,7 +596,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
          abortGoal("MoveBasic: Cannot determine robot pose for rotation");
          return false;
     }
-    
+
     double x, y, currentYaw;
     getPose(poseDriving, x, y, currentYaw);
     double requestedYaw = currentYaw + yaw;
@@ -607,7 +632,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
                 (remaining - angularTolerance))));
 
         double angular_velocity = 0;
-        angular_velocity = (angleRemaining < 0.0) ? -speed : speed; 
+        angular_velocity = (angleRemaining < 0.0) ? -speed : speed;
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
             oscillations++;
@@ -708,8 +733,9 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(remaining.x() * remaining.x() + remaining.y() * remaining.y());
+        ROS_INFO("distRemaining: %f", distRemaining);
         double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
-	
+
 	if (std::abs(remaining.y()) >= maxLateralDev) {
             abortGoal("MoveBasic: Aborting since max deviation reached");
             sendCmd(0, 0);
@@ -777,21 +803,14 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                                                             forwardRight);
         }
 
-	// Control to reference pose 
-	controlVelocity = velMult * distRemaining;
-	if (controlVelocity < velThreshold) { 
-		ROS_INFO("Remaining velocity: %f", controlVelocity);
-		sendCmd(0, 0);
-		if (distRemaining < linearTolerance) { // Checks if in tolerance range
-        		ROS_INFO("MoveBasic: Done linear, error %f, %f meters", remaining.x(), remaining.y());
-			return true;
-		}
-		else {
-			abortGoal("MoveBasic: Aborting due to linear error");
-			return false;
-		}
-	}
+        if (distRemaining < linearTolerance && !nextGoalAvailable) { // Checks if in tolerance range
+                ROS_INFO("MoveBasic: Goal reached - ERROR: x: %f meters, y: %f meters", remaining.x(), remaining.y());
+                nextGoalAvailable = false;
+                done = true;
+                return done;
+        }
 
+	controlVelocity = velMult * distRemaining;
         double velocity = std::max(minLinearVelocity,
             std::min(std::min(maxLinearVelocity, controlVelocity), std::min(
               std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
@@ -841,23 +860,11 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 	if (distRemaining < prevDistance) {
 		prevDistance = distRemaining;
 		if (ros::Time::now() - last > abortTimeout) {
-			abortGoal("MoveBasic: No progress towards goal for longer than timeout.");		
+			abortGoal("MoveBasic: No progress towards goal for longer than timeout.");
 			sendCmd(0, 0);
 			return false;
 		}
 	}
-	/*
-	if ((distRemaining < prevDistance) && (distThreshold != 0)) {
-		if (prevDistance+distThreshold < distRemaining) {
-			abortGoal("MoveBasic: Detected that we are moving further from the goal, aborting.");		
-			sendCmd(0, 0);
-			return false;
-		} 
-		else {
-			prevDistance = distRemaining;
-		}
-	}
-	*/
 
         if (!forward) {
             velocity = -velocity;
