@@ -88,7 +88,6 @@ class MoveBasic {
     bool nextGoalAvailable;
     tf2::Transform nextGoalPose;
     std::string frameIdNext;
-    std::string goalReachedFrameId;
 
     double lateralKp;
     double lateralKi;
@@ -188,7 +187,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("angular_acceleration", maxAngularAcceleration, 5.0);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 1.1);
     nh.param<double>("linear_acceleration", maxLinearAcceleration, 1.1);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.1);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.15);
 
     // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 4.0);
@@ -227,7 +226,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("velocity_threshold", velThreshold, 0.01);
     nh.param<double>("velocity_multiplier", velMult, 1.0);
 
-    nh.param<std::string>("goal_reached_frame_id", goalReachedFrameId, "None");
     nh.param<std::string>("preferred_driving_frame",
                          preferredDrivingFrame, "map");
     nh.param<std::string>("alternate_driving_frame",
@@ -352,11 +350,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     // Needed for RobotCommander
     if (frameId[0] == '/')
         frameId = frameId.substr(1);
-
-    if (frameId.compare(goalReachedFrameId) == 0) {
-        return;
-    }
-    goalReachedFrameId = frameId;
 
     double x, y, yaw;
     getPose(goal, x, y, yaw);
@@ -585,7 +578,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
                                                         forwardLeft,
                                                         forwardRight);
             }
-            ROS_DEBUG("MoveBasic: %f L %f, R %f\n",
+            ROS_INFO("MoveBasic: %f L %f, R %f\n",
                     forwardObstacleDist, leftObstacleDist, rightObstacleDist);
 
             // Turning Algorithm that calculates the maximum allowed speed when cornering in order not to slip or tip over
