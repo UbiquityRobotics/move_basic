@@ -40,6 +40,7 @@
 #include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
 
 #include <actionlib/server/simple_action_server.h>
 #include <move_base_msgs/MoveBaseAction.h>
@@ -58,6 +59,7 @@ typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber phGoalSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -85,7 +87,12 @@ class MoveBasic {
     double gravityConstant;
     double maxLateralDev;
 
+    int goalId;
+    int phantomCounter;
     bool nextGoalAvailable;
+    bool abortPhantom;
+    bool phantomGoalReceived;
+    bool phantom;
     tf2::Transform nextGoalPose;
     std::string frameIdNext;
 
@@ -112,8 +119,8 @@ class MoveBasic {
     tf2::Vector3 forwardLeft;
     tf2::Vector3 forwardRight;
 
+    void phantomGoalCallback(const std_msgs::BoolConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-    void nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
     void sendCmd(double angular, double linear);
@@ -186,9 +193,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     ros::NodeHandle nh("~");
     nh.param<double>("max_angular_velocity", maxAngularVelocity, 2.0);
     nh.param<double>("angular_acceleration", maxAngularAcceleration, 5.0);
-    nh.param<double>("max_linear_velocity", maxLinearVelocity, 1.1);
+    nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", maxLinearAcceleration, 1.1);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.15);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.2);
 
     // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 4.0);
@@ -203,6 +210,13 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // After a goal is reached isNexGoalAvailable() on action server needs some time to update
     // Afterwards in order to achieve smooth toggling between the goals a bool variable is set
     nh.param<bool>("next_goal_available", nextGoalAvailable, false);
+    nh.param<int>("goal_id", goalId, 1);
+    nh.param<int>("phantom_counter", phantomCounter, -1);
+
+    // TODO: Description
+    nh.param<bool>("phantom", phantom, false);
+    nh.param<bool>("phantom_goal_received", phantomGoalReceived, false);
+    nh.param<bool>("abort_phantom", abortPhantom, false);
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
@@ -242,10 +256,12 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
+    phGoalSub = nh.subscribe("/phantom", 1,
+                            &MoveBasic::phantomGoalCallback, this);
     ros::NodeHandle actionNh("");
 
     actionServer.reset(new MoveBaseActionServer(actionNh, "move_base",
-	boost::bind(&MoveBasic::executeAction, this, _1)));
+	        boost::bind(&MoveBasic::executeAction, this, _1)));
 
     actionServer->start();
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
@@ -288,22 +304,41 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     return true;
 }
 
+// Called when a phantom goal message is received
+
+void MoveBasic::phantomGoalCallback(const std_msgs::BoolConstPtr &msg)
+{
+    phantomGoalReceived = msg->data;
+    if (phantomGoalReceived) {
+        ROS_INFO("MoveBasic: Received phantom goal");
+        phantom = true;
+    }
+}
+
 
 // Called when a simple goal message is received
 
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
-    ROS_INFO("MoveBasic: Received simple goal");
+    if (!phantomGoalReceived)
+        ROS_INFO("MoveBasic: Received simple goal");
 
+    ROS_INFO("if = 1 that is phantom --> %d", phantomGoalReceived);
     // send the goal to the action server
     move_base_msgs::MoveBaseActionGoal actionGoal;
     actionGoal.header.stamp = ros::Time::now();
+    if (phantom) {
+        actionGoal.goal_id.id = std::to_string(phantomCounter);
+        phantomCounter = phantomCounter - 1;
+        phantom = false;
+    }
+    else {
+        actionGoal.goal_id.id = std::to_string(goalId);
+        goalId = goalId + 1;
+    }
     actionGoal.goal.target_pose = *msg;
     goalPub.publish(actionGoal);
-}
 
-void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg)
-{
     // isNewGoalAvailable() needs to update on an actionServer
     std::condition_variable newgoal_cv;
     std::mutex cv_m;
@@ -316,10 +351,9 @@ void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg
     );
 
     // If there is a new goal store it
-    if(actionServer-> isNewGoalAvailable()) {
-        ROS_INFO("MoveBasic: Next goal received");
-        tf2::fromMsg(msg->target_pose.pose, nextGoalPose);
-        frameIdNext = msg->target_pose.header.frame_id;
+    if(actionServer->isNewGoalAvailable()) {
+        tf2::fromMsg(msg->pose, nextGoalPose);
+        frameIdNext = msg->header.frame_id;
         // Needed for RobotCommander
         if (frameIdNext[0] == '/')
             frameIdNext = frameIdNext.substr(1);
@@ -327,7 +361,6 @@ void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg
         nextGoalAvailable = true;
     }
 }
-
 
 // Abort goal and print message
 
@@ -428,8 +461,9 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     // Send control commands
     if (requestedDistance > minRequestDistance) {
-        if (!smoothControl(requestedDistance, reverseWithoutTurning, drivingFrame, goalInDriving))
+        if (!smoothControl(requestedDistance, reverseWithoutTurning, drivingFrame, goalInDriving)) {
             return;
+        }
     }
     else {
         ROS_WARN("Requested distance is lower than the minimum distance threshold ( %f meters)", minRequestDistance);
@@ -439,7 +473,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     actionServer->setSucceeded();
 }
-
 
 // Send a motion command
 
@@ -458,6 +491,7 @@ void MoveBasic::sendCmd(double angular, double linear)
 void MoveBasic::run()
 {
     ros::Rate r(20);
+
 
     while (ros::ok()) {
         ros::spinOnce();
@@ -583,8 +617,8 @@ bool MoveBasic::smoothControl(double requestedDistance,
                                                         forwardLeft,
                                                         forwardRight);
             }
-            ROS_INFO("MoveBasic: %f L %f, R %f\n",
-                    forwardObstacleDist, leftObstacleDist, rightObstacleDist);
+            // TODO: ROS_INFO("MoveBasic: %f L %f, R %f\n",
+                    // TODO: forwardObstacleDist, leftObstacleDist, rightObstacleDist);
 
             // Turning Algorithm that calculates the maximum allowed speed when cornering in order not to slip or tip over
             double maxTurnVelocity = sqrt(maxLateralDev * gravityConstant * maxIncline/(1-cos(angleRemaining/2)));
@@ -603,9 +637,11 @@ bool MoveBasic::smoothControl(double requestedDistance,
                                     std::min(maxLinearVelocity,
                                     std::max(linearVelocity, startTurnVelocity)));
             }
-
             if (!forward)
                 linearVelocity = -linearVelocity;
+
+            // TODO: Delete this!
+            linearVelocity = std::min(linearVelocity, 0.7);
 
             previousLinearVelocity = linearVelocity;
             previousTime = ros::Time::now();
@@ -651,18 +687,26 @@ bool MoveBasic::smoothControl(double requestedDistance,
             if (distRemaining < prevDistance) {
                 prevDistance = distRemaining;
                 if (ros::Time::now() - last > abortTimeout) {
-                        abortGoal("MoveBasic: No progress towards goal for longer than timeout.");
+                        abortGoal("MoveBasic: No progress towards goal for longer than timeout");
                         done = false;
                         goto FinishWithStop;
                 }
             }
 
-            if (actionServer->isPreemptRequested()) {
-                ROS_INFO("MoveBasic: Stopping due to preempt request");
-                done = true;
-                goto FinishWithStop;
+            if (actionServer->isPreemptRequested() && phantomGoalReceived) {
+                ROS_INFO("MoveBasic: Preempting phantom goal");
+                phantomGoalReceived = false;
+                actionServer->setPreempted();
+                done = false;
+                goto FinishWithoutStop;
             }
 
+            if (actionServer->isPreemptRequested()) {
+                ROS_INFO("MoveBasic: Stopping due to preempt request");
+                actionServer->setPreempted();
+                done = false;
+                goto FinishWithStop;
+            }
 
             // Check navigation complete //
 
@@ -670,6 +714,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
             if (distRemaining < linearTolerance && nextGoalAvailable) { // Checks if in tolerance range
                 ROS_INFO("MoveBasic: Goal reached - ERROR: x: %f meters, y: %f meters, yaw: %f degrees", remaining.x(), remaining.y(), rad2deg(angleRemaining));
                 nextGoalAvailable = false;
+                phantomGoalReceived = false;
                 done = true;
                 goto FinishWithoutStop;
             }
@@ -682,9 +727,11 @@ bool MoveBasic::smoothControl(double requestedDistance,
                 if (distRemaining < linearTolerance) { // Checks if in tolerance range
                     ROS_INFO("MoveBasic: Goal reached - ERROR: x: %f meters, y: %f meters, yaw: %f degrees", remaining.x(), remaining.y(), rad2deg(angleRemaining));
                     done = true;
+                    phantomGoalReceived = false;
                 }
                 else {
                     abortGoal("MoveBasic: Aborting due to missing the goal");
+                    actionServer->setAborted();
                     done = false;
                 }
                 goto FinishWithStop;
