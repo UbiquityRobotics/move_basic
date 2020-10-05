@@ -58,6 +58,7 @@ typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber nextGoalSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -113,7 +114,7 @@ class MoveBasic {
     tf2::Vector3 forwardRight;
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-    void nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& goal);
+    void nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPtr& goal);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
     void sendCmd(double angular, double linear);
@@ -242,6 +243,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
+    nextGoalSub = nh.subscribe("/move_base/goal", 1,
+                             &MoveBasic::nextGoalCallback, this);
+
     ros::NodeHandle actionNh("");
 
     actionServer.reset(new MoveBaseActionServer(actionNh, "move_base",
@@ -300,9 +304,31 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     actionGoal.header.stamp = ros::Time::now();
     actionGoal.goal.target_pose = *msg;
     goalPub.publish(actionGoal);
+
+    // isNewGoalAvailable() needs to update on an actionServer
+    std::condition_variable newgoal_cv;
+    std::mutex cv_m;
+    std::unique_lock<std::mutex> newgoal_lk(cv_m);
+    auto now = std::chrono::system_clock::now();
+    auto timeout = std::chrono::milliseconds(50);
+    newgoal_cv.wait_until(newgoal_lk,
+            now + timeout,
+            [this](){return actionServer->isNewGoalAvailable();}
+    );
+
+    // If there is a new goal store it
+    if(actionServer-> isNewGoalAvailable()) {
+        tf2::fromMsg(msg->pose, nextGoalPose);
+        frameIdNext = msg->header.frame_id;
+        // Needed for RobotCommander
+        if (frameIdNext[0] == '/')
+            frameIdNext = frameIdNext.substr(1);
+
+        nextGoalAvailable = true;
+    }
 }
 
-void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg)
+void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPtr& msg)
 {
     // isNewGoalAvailable() needs to update on an actionServer
     std::condition_variable newgoal_cv;
@@ -318,8 +344,8 @@ void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseGoalConstPtr& msg
     // If there is a new goal store it
     if(actionServer-> isNewGoalAvailable()) {
         ROS_INFO("MoveBasic: Next goal received");
-        tf2::fromMsg(msg->target_pose.pose, nextGoalPose);
-        frameIdNext = msg->target_pose.header.frame_id;
+        tf2::fromMsg(msg->goal.target_pose.pose, nextGoalPose);
+        frameIdNext = msg->goal.target_pose.header.frame_id;
         // Needed for RobotCommander
         if (frameIdNext[0] == '/')
             frameIdNext = frameIdNext.substr(1);
