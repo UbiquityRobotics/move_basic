@@ -316,7 +316,6 @@ void MoveBasic::phantomGoalCallback(const std_msgs::BoolConstPtr &msg)
 {
     phantomGoalReceived = msg->data;
     if (phantomGoalReceived) {
-        ROS_INFO("MoveBasic: Received phantom goal");
         phantom = true;
     }
 }
@@ -326,8 +325,22 @@ void MoveBasic::phantomGoalCallback(const std_msgs::BoolConstPtr &msg)
 
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
-    if (!phantomGoalReceived)
+    // Phantom goal flag callback needs to update
+    std::condition_variable phflag_cv;
+    std::mutex cv_phm;
+    std::unique_lock<std::mutex> phflag_lk(cv_phm);
+    auto n = std::chrono::system_clock::now();
+    auto time = std::chrono::milliseconds(200);
+    phflag_cv.wait_until(phflag_lk,
+            n + time,
+            [this](){return phantom;}
+    );
+
+    if (phantomGoalReceived)
+        ROS_INFO("MoveBasic: Received phantom goal");
+    else
         ROS_INFO("MoveBasic: Received simple goal");
+
 
     ROS_INFO("if = 1 that is phantom --> %d", phantomGoalReceived);
     // send the goal to the action server
@@ -737,6 +750,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
 
             if (actionServer->isPreemptRequested()) {
                 ROS_INFO("MoveBasic: Stopping due to preempt request");
+                phantomGoalReceived = false;
                 actionServer->setPreempted();
                 done = false;
                 goto FinishWithStop;
