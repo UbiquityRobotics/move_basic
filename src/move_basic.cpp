@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2017-9, Ubiquity Robotics
  * All rights reserved.
@@ -122,7 +123,7 @@ class MoveBasic {
 
     void phantomGoalCallback(const std_msgs::BoolConstPtr &msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-    void nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPtr& goal);
+    // TODO: void nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPtr& goal);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
     void sendCmd(double angular, double linear);
@@ -260,8 +261,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     phGoalSub = nh.subscribe("/phantom", 1,
                             &MoveBasic::phantomGoalCallback, this);
-    nextGoalSub = nh.subscribe("/move_base/goal", 1,
-                             &MoveBasic::nextGoalCallback, this);
+    // TODO: nextGoalSub = nh.subscribe("/move_base/goal", 1,
+    // TODO:                          &MoveBasic::nextGoalCallback, this);
 
     ros::NodeHandle actionNh("");
 
@@ -367,6 +368,7 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     }
 }
 
+/*
 void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPtr& msg)
 {
     // isNewGoalAvailable() needs to update on an actionServer
@@ -392,7 +394,7 @@ void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPt
         nextGoalAvailable = true;
     }
 }
-
+*/
 
 // Abort goal and print message
 
