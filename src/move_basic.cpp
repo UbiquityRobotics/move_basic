@@ -314,6 +314,7 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 void MoveBasic::phantomGoalCallback(const std_msgs::BoolConstPtr &msg)
 {
+    // TODO: ROS_INFO("In the phantom Callback");
     phantomGoalReceived = msg->data;
     if (phantomGoalReceived) {
         phantom = true;
@@ -743,6 +744,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
             if (actionServer->isPreemptRequested() && phantomGoalReceived) {
                 ROS_INFO("MoveBasic: Preempting phantom goal");
                 phantomGoalReceived = false;
+                // TODO: ROS_INFO("In the phantom preempt");
                 actionServer->setPreempted();
                 done = false;
                 goto FinishWithoutStop;
@@ -750,6 +752,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
 
             if (actionServer->isPreemptRequested()) {
                 ROS_INFO("MoveBasic: Stopping due to preempt request");
+                // TODO: ROS_INFO("In the non phantom preempt");
                 phantomGoalReceived = false;
                 actionServer->setPreempted();
                 done = false;
