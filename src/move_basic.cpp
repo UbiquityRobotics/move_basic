@@ -261,8 +261,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     phGoalSub = nh.subscribe("/phantom", 1,
                             &MoveBasic::phantomGoalCallback, this);
-    // TODO: nextGoalSub = nh.subscribe("/move_base/goal", 1,
-    // TODO:                          &MoveBasic::nextGoalCallback, this);
 
     ros::NodeHandle actionNh("");
 
@@ -314,7 +312,7 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 void MoveBasic::phantomGoalCallback(const std_msgs::BoolConstPtr &msg)
 {
-    // TODO: ROS_INFO("In the phantom Callback");
+    ROS_INFO("In the phantom Callback");
     phantomGoalReceived = msg->data;
     if (phantomGoalReceived) {
         phantom = true;
@@ -381,34 +379,6 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
         nextGoalAvailable = true;
     }
 }
-
-/*
-void MoveBasic::nextGoalCallback(const move_base_msgs::MoveBaseActionGoalConstPtr& msg)
-{
-    // isNewGoalAvailable() needs to update on an actionServer
-    std::condition_variable newgoal_cv;
-    std::mutex cv_m;
-    std::unique_lock<std::mutex> newgoal_lk(cv_m);
-    auto now = std::chrono::system_clock::now();
-    auto timeout = std::chrono::milliseconds(50);
-    newgoal_cv.wait_until(newgoal_lk,
-            now + timeout,
-            [this](){return actionServer->isNewGoalAvailable();}
-    );
-
-    // If there is a new goal store it
-    if(actionServer-> isNewGoalAvailable()) {
-        ROS_INFO("MoveBasic: Next goal received");
-        tf2::fromMsg(msg->goal.target_pose.pose, nextGoalPose);
-        frameIdNext = msg->goal.target_pose.header.frame_id;
-        // Needed for RobotCommander
-        if (frameIdNext[0] == '/')
-            frameIdNext = frameIdNext.substr(1);
-
-        nextGoalAvailable = true;
-    }
-}
-*/
 
 // Abort goal and print message
 
@@ -744,7 +714,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
             if (actionServer->isPreemptRequested() && phantomGoalReceived) {
                 ROS_INFO("MoveBasic: Preempting phantom goal");
                 phantomGoalReceived = false;
-                // TODO: ROS_INFO("In the phantom preempt");
+                ROS_INFO("In the phantom preempt");
                 actionServer->setPreempted();
                 done = false;
                 goto FinishWithoutStop;
@@ -752,7 +722,7 @@ bool MoveBasic::smoothControl(double requestedDistance,
 
             if (actionServer->isPreemptRequested()) {
                 ROS_INFO("MoveBasic: Stopping due to preempt request");
-                // TODO: ROS_INFO("In the non phantom preempt");
+                ROS_INFO("In the non phantom preempt");
                 phantomGoalReceived = false;
                 actionServer->setPreempted();
                 done = false;
