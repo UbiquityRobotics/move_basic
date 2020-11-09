@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2017-9, Ubiquity Robotics
  * All rights reserved.
@@ -60,6 +59,8 @@ typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber phGoalSub;
+    ros::Subscriber nextGoalSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -120,7 +121,6 @@ class MoveBasic {
 
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
-    void drawLine(double x0, double y0, double x1, double y1);
     void sendCmd(double angular, double linear);
     void abortGoal(const std::string msg);
 
@@ -184,7 +184,6 @@ static void getPose(const tf2::Transform& tf, double& x, double& y, double& yaw)
 
 
 // Constructor
-
 MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                         listener(tfBuffer)
 {
@@ -193,15 +192,15 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("angular_acceleration", maxAngularAcceleration, 5.0);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", maxLinearAcceleration, 1.1);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.2);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.7);
 
     // Parameters for turn PID
-    nh.param<double>("lateral_kp", lateralKp, 2.5);
+    nh.param<double>("lateral_kp", lateralKp, 2.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 10.0);
+    nh.param<double>("lateral_kd", lateralKd, 20.0);
 
     // To prevent sliping and tipping over when turning
-    nh.param<double>("max_incline_without_slipping", maxIncline, 0.005);
+    nh.param<double>("max_incline_without_slipping", maxIncline, 0.01);
     nh.param<double>("gravity_acceleration", gravityConstant, 9.81);
     nh.param<double>("max_lateral_deviation", maxLateralDev, 0.4);
 
@@ -214,25 +213,30 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
-
-    // if distance <  velocity times this we stop
     nh.param<double>("forward_obstacle_threshold", forwardObstacleThreshold, 1.5);
 
     // Reverse distances for which rotation won't be performed
     nh.param<double>("reverse_without_turning_threshold",
                         reverseWithoutTurningThreshold, 0.5);
-
     nh.param<double>("abort_timeout", abortTimeoutSecs, 60.0);
 
     // Proportional controller for following the goal
     nh.param<double>("velocity_threshold", velThreshold, 0.05);
-    nh.param<double>("velocity_multiplier", velMult, 1.0);
+    nh.param<double>("velocity_multiplier", velMult, 0.7);
 
     nh.param<std::string>("preferred_driving_frame",
                          preferredDrivingFrame, "map");
     nh.param<std::string>("alternate_driving_frame",
                           alternateDrivingFrame, "odom");
-    nh.param<std::string>("base_frame", baseFrame, "base_footprint");
+    nh.param<std::string>("base_frame", baseFrame, "base_link");
+
+    // After a goal is reached isNexGoalAvailable() on action server needs some time to update
+    // Afterwards in order to achieve smooth toggling between the goals a bool variable is set
+    nextGoalAvailable = false;
+    phantomId = false;
+    phantomGoalReceived = false;
+    goalId = 1;
+    phantomCounter = -1;
 
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
@@ -289,13 +293,24 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     return true;
 }
 
+
 // Called when a simple goal message is received
 
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
-    // send the goal to the action server
     move_base_msgs::MoveBaseActionGoal actionGoal;
     actionGoal.header.stamp = ros::Time::now();
+    if ((msg->header.frame_id).find("fid") != std::string::npos) {
+        phantomId = true;
+        actionGoal.goal_id.id = std::to_string(phantomCounter);
+        phantomCounter = phantomCounter - 1;
+	phantomGoalReceived = false; 
+    }
+    else {
+	phantomId = false;
+        actionGoal.goal_id.id = std::to_string(goalId);
+        goalId = goalId + 1;
+    }
     actionGoal.goal.target_pose = *msg;
     goalPub.publish(actionGoal);
 
@@ -317,7 +332,6 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
         // Needed for RobotCommander
         if (frameIdNext[0] == '/')
             frameIdNext = frameIdNext.substr(1);
-
         nextGoalAvailable = true;
     }
 }
@@ -519,7 +533,6 @@ bool MoveBasic::smoothControl(double requestedDistance,
             tf2::Transform goalInBase = poseDriving * goalInDriving;
             tf2::Vector3 remaining = goalInBase.getOrigin();
             double distRemaining = sqrt(remaining.x() * remaining.x() + remaining.y() * remaining.y());
-            ROS_INFO("distRemaining: %f", distRemaining);
             double angleRemaining = atan2(remaining.y(), remaining.x());
             normalizeAngle(angleRemaining);
 
@@ -533,8 +546,8 @@ bool MoveBasic::smoothControl(double requestedDistance,
             }
 
             // Next goal state in base frame, if available
-            double angleToNextGoal;
-            double distanceToNextGoal;
+            double angleToNextGoal = 0;
+            double distanceToNextGoal = 0;
             if (nextGoalAvailable) {
                 tf2::Transform nextGoalInDriving;
                 // Next goal in driving frame
@@ -577,21 +590,18 @@ bool MoveBasic::smoothControl(double requestedDistance,
                                                         forwardLeft,
                                                         forwardRight);
             }
-            // TODO: ROS_INFO("MoveBasic: %f L %f, R %f\n",
-                    // TODO: forwardObstacleDist, leftObstacleDist, rightObstacleDist);
+            ROS_DEBUG("MoveBasic: %f L %f, R %f\n",
+                    forwardObstacleDist, leftObstacleDist, rightObstacleDist);
 
-            // Turning Algorithm that calculates the maximum allowed speed when cornering in order not to slip or tip over
+            // Turn algorithm that calculates the maximum allowed speed when cornering in order not to slip or tip over
             double maxTurnVelocity = sqrt(maxLateralDev * gravityConstant * maxIncline/(1-cos(angleRemaining/2)));
-            // TODO: Remove this!
-            maxLinearVelocity = 1.1;
             double linearVelocity = std::max(-maxLinearVelocity,
                                         std::min(std::min(maxLinearVelocity,
                                         std::min(std::min(velMult * distRemaining, maxTurnVelocity),
                                         sqrt(2.0 * maxLinearAcceleration * obstacleDist))),
                                         velMult * (previousLinearVelocity + 2.0 * maxLinearAcceleration * distRemaining)));
 
-            // In order to achieve smooth toggling between going linear and into the turn, minimum output velocity
-            // of the Turning Algorithm is calculated so that the linear velocity(going into the turn) does not get lower than that
+            // Linear speed is kept higher or equal than minimum turn speed calculated
             if (nextGoalAvailable) {
                 double startTurnVelocity = sqrt(gravityConstant * maxIncline * maxLateralDev/(1-cos(angleToNextGoal/2)));
                 double nextGoalVelocity = velMult * distanceToNextGoal;
@@ -602,7 +612,6 @@ bool MoveBasic::smoothControl(double requestedDistance,
             if (!forward)
                 linearVelocity = -linearVelocity;
 
-            ROS_INFO("Linear Velocity: %f", linearVelocity);
             previousLinearVelocity = linearVelocity;
             previousTime = ros::Time::now();
 
@@ -653,10 +662,9 @@ bool MoveBasic::smoothControl(double requestedDistance,
                 }
             }
 
-            if (actionServer->isPreemptRequested() && phantomGoalReceived) {
+            if (actionServer->isPreemptRequested() && phantomId) {
                 ROS_INFO("MoveBasic: Preempting phantom goal");
                 phantomGoalReceived = false;
-                ROS_INFO("In the phantom preempt");
                 actionServer->setPreempted();
                 done = false;
                 goto FinishWithoutStop;
@@ -664,7 +672,6 @@ bool MoveBasic::smoothControl(double requestedDistance,
 
             if (actionServer->isPreemptRequested()) {
                 ROS_INFO("MoveBasic: Stopping due to preempt request");
-                ROS_INFO("In the non phantom preempt");
                 phantomGoalReceived = false;
                 actionServer->setPreempted();
                 done = false;
@@ -694,7 +701,6 @@ bool MoveBasic::smoothControl(double requestedDistance,
                 }
                 else {
                     abortGoal("MoveBasic: Aborting due to missing the goal");
-                    actionServer->setAborted();
                     done = false;
                 }
                 goto FinishWithStop;

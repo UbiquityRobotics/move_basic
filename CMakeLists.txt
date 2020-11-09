@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   visualization_msgs
   move_base_msgs
-  nav_core
+  nav_core # If this gets removed, isNextGoalAvailable() was triggering on the first goal
 )
 
 # Generate messages in the 'msg' folder
@@ -22,8 +22,8 @@ add_message_files(
   FollowMode.msg
 )
 generate_messages(
-  DEPENDENCIES 
-  std_msgs 
+  DEPENDENCIES
+  std_msgs
 )
 
 catkin_package(INCLUDE_DIRS DEPENDS)
@@ -74,4 +74,3 @@ if(CATKIN_ENABLE_TESTING)
                 test/test_obstacle_points.cpp)
         target_link_libraries(obstacle_points_test ${catkin_LIBRARIES})
 endif()
-
