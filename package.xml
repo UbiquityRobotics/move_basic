@@ -25,5 +25,6 @@
   <depend>actionlib</depend>
   <depend>actionlib_msgs</depend>
   <depend>move_base_msgs</depend>
+  <depend>dynamic_reconfigure</depend>
 </package>
 

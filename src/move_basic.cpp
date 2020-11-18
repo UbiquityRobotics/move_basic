@@ -49,6 +49,9 @@
 #include "move_basic/collision_checker.h"
 #include "move_basic/queued_action_server.h"
 
+#include <dynamic_reconfigure/server.h>
+#include <move_basic/MovebasicConfig.h>
+
 #include <string>
 
 typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
@@ -117,6 +120,9 @@ class MoveBasic {
     tf2::Vector3 forwardRight;
     double reverseWithoutTurningThreshold;
 
+    dynamic_reconfigure::Server<move_basic::MovebasicConfig> dr_srv_;
+
+    void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
@@ -251,6 +257,11 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                           alternateDrivingFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_footprint");
 
+    //***************** DYNAMIC RECOFIGURE **********//
+    dynamic_reconfigure::Server<move_basic::MovebasicConfig>::CallbackType f;
+    f = boost::bind(&MoveBasic::dynamicReconfigCallback, this, _1, _2);
+    dr_srv_.setCallback(f);
+
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
 
@@ -322,6 +333,23 @@ void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     goalPub.publish(actionGoal);
 }
 
+void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level){
+    ROS_INFO("Parameter change detected");
+    lateralKp = config.lateral_kp;
+    lateralKi = config.lateral_ki;
+    lateralKd = config.lateral_kd;
+
+    minAngularVelocity = config.min_angular_velocity; 
+    maxAngularVelocity = config.max_angular_velocity; 
+    angularAcceleration = config.angular_acceleration; 
+    angularTolerance = config.angular_tolerance; 
+    minLinearVelocity = config.min_linear_velocity; 
+    maxLinearVelocity = config.max_linear_velocity; 
+    linearAcceleration = config.linear_acceleration; 
+    linearTolerance = config.linear_tolerance; 
+
+    
+}
 
 // Abort goal and print message
 

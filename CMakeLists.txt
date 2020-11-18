@@ -14,6 +14,11 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
   move_base_msgs
   nav_core
+  dynamic_reconfigure
+)
+
+generate_dynamic_reconfigure_options(
+  cfg/Movebasic.cfg
 )
 
 # Generate messages in the 'msg' folder
