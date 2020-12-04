@@ -81,6 +81,7 @@ class MoveBasic {
     double rotGain;
     double velThreshold;
 
+    double abortTimeoutSecs;
     double obstacleWaitLimit;
     double forwardObstacleThreshold;
 
@@ -176,7 +177,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Velocity parameters
     nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
-    nh.param<double>("max_linear_velocity", maxLinearVelocity, 1.0);
+    nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("angular_tolerance", angularTolerance, 0.001);
     nh.param<double>("linear_tolerance", linearTolerance, 0.03);
@@ -197,7 +198,10 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("min_side_dist", minSideDist, 0.3);
 
     // Weighting of turning to recover from avoiding side obstacles
-    nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
+    nh.param<double>("side_recover_weight", sideRecoverWeight, 1.0);
+
+    // Time which the robot can be driving away from the goal
+    nh.param<double>("abort_timeout", abortTimeoutSecs, 5.0);
 
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 60.0);
@@ -441,9 +445,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
 
         // Do linear portion of goal
-        if (reverseWithoutTurning) {
-            dist = - dist;
-        }
         if (!moveLinear(goalInDriving, drivingFrame)) {
             return;
         }
@@ -513,6 +514,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
     normalizeAngle(requestedYaw);
     ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(requestedYaw));
 
+    bool success = false;
     bool done = false;
     ros::Rate r(50);
 
@@ -542,13 +544,15 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping rotation due to preempt");
             done = true;
+            success = false;
             velocity = 0;
         }
 
         if (std::abs(angleRemaining) < angularTolerance) {
-            velocity = 0;
-            done = true;
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
+            velocity = 0;
+            success = true;
+            done = true;
         }
 
         bool reverse =  (angleRemaining < 0.0);
@@ -558,7 +562,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         sendCmd(velocity, 0);
     }
-    return done;
+    return success;
 }
 
 // Move forward specified distance
@@ -566,10 +570,6 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                            const std::string& drivingFrame)
 {
-    bool waitingForObstacle = false;
-    int  waitingLoops = 0;
-    ros::Time obstacleTime;
-
     tf2::Transform poseDriving;
     if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
          abortGoal("MoveBasic: Cannot determine robot pose for linear");
@@ -580,6 +580,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     tf2::Vector3 remaining = goalInBase.getOrigin();
     bool forward = (remaining.x() > 0);
     double requestedDistance = remaining.length();
+    double prevDistRemaining = 0;
+    bool waitingForObstacle = false;
+    int  waitingLoops = 0;
+    ros::Time obstacleTime;
+    ros::Time last = ros::Time::now();
+    ros::Duration abortTimeout(abortTimeoutSecs);
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -588,6 +594,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     double lateralDiff = 0.0;
     ros::Time sensorTime;
 
+    bool success = false;
     bool done = false;
     ros::Rate r(50);
     while (!done && ros::ok()) {
@@ -596,11 +603,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         if (!getTransform("odom", baseFrame, poseDriving)) {
              ROS_WARN("MoveBasic: Cannot determine robot pose for linear");
-             continue;
+             return false;
         }
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(remaining.x() * remaining.x() + remaining.y() * remaining.y());
+        ROS_INFO("%f", distRemaining);
 
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
@@ -613,8 +621,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         // Clamp rotation
         rotation = std::max(-maxAngularVelocity, std::min(maxAngularVelocity,
                                                           rotation));
-        ROS_INFO("%f", rotation);
-
         ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f \n",
                   forwardObstacleDist, leftObstacleDist, rightObstacleDist,
                   remaining.x(), remaining.y(), lateralError,
@@ -637,7 +643,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         }
 
         double velocity = std::max(-maxLinearVelocity,
-            std::min(linGain*distRemaining, std::min(maxLinearVelocity,
+            std::min(linGain*std::abs(distRemaining), std::min(maxLinearVelocity,
               std::sqrt(0.5 * linearAcceleration *
                  std::min(obstacleDist, distRemaining)))));
 
@@ -659,8 +665,9 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                 ros::Duration waitTime = ros::Time::now() - obstacleTime;
                 if (waitTime.toSec() > obstacleWaitLimit) {
                     abortGoal("MoveBasic: Aborting due to obstacle");
-                    sendCmd(0, 0);
-                    return false;
+                    velocity = 0;
+                    success = false;
+                    done = true;
                 }
             }
         }
@@ -676,12 +683,24 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping move due to preempt");
             velocity = 0;
+            success = false;
             done = true;
         }
 
+        if (distRemaining > prevDistRemaining) {
+            prevDistRemaining = distRemaining;
+            if (ros::Time::now() - last > abortTimeout) {
+                abortGoal("MoveBasic: No progress towards goal for longer than timeout");
+                velocity = 0;
+                success = false;
+                done = true;
+            }
+        }
+
         if ((std::abs(velocity) < velThreshold) && !waitingForObstacle && (distRemaining < linearTolerance)) {
+            ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
-            ROS_INFO("MoveBasic: Goal reached - ERROR: x: %f meters, y: %f meters", remaining.x(), remaining.y());
+            success = true;
             done = true;
         }
 
@@ -689,9 +708,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             velocity = -velocity;
         }
         sendCmd(rotation, velocity);
-        // TODO: ROS_INFO("%f", distRemaining);
     }
-    return done;
+    return success;
 }
 
 
