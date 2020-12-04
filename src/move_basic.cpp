@@ -178,7 +178,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 1.0);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
-    nh.param<double>("angular_tolerance", angularTolerance, 0.005);
+    nh.param<double>("angular_tolerance", angularTolerance, 0.001);
     nh.param<double>("linear_tolerance", linearTolerance, 0.03);
 
     // Parameters for turn PID
