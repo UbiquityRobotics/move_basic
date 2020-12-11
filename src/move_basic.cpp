@@ -311,6 +311,7 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
     ROS_INFO("MoveBasic: Received simple goal");
+
     // send the goal to the action server
     move_base_msgs::MoveBaseActionGoal actionGoal;
     actionGoal.header.stamp = ros::Time::now();
@@ -463,18 +464,21 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         }
 
         // Initial rotation
-        if (!rotate(requestedYaw, drivingFrame)) {
-            return;
+        if (std::abs(requestedYaw) > angularTolerance) {
+            if (!rotate(requestedYaw, drivingFrame)) {
+                return;
+            }
         }
-
         // Linear portion
         if (!moveLinear(goalInDriving, drivingFrame)) {
             return;
         }
 
         // Final rotation
-        if (!rotate(goalYaw - yaw, drivingFrame)) {
-            return;
+        if (std::abs(goalYaw - (yaw + requestedYaw)) > angularTolerance) {
+            if (!rotate(goalYaw - (yaw + requestedYaw), drivingFrame)) {
+                return;
+            }
         }
     }
 
