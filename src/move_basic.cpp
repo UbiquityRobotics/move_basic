@@ -176,20 +176,20 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
-    nh.param<double>("angular_tolerance", angularTolerance, 0.001);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.03);
+    nh.param<double>("angular_tolerance", angularTolerance, 0.01);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.1);
 
     // Parameters for turn PID
-    nh.param<double>("lateral_kp", lateralKp, 10.0);
+    nh.param<double>("lateral_kp", lateralKp, 2.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 0.0);
+    nh.param<double>("lateral_kd", lateralKd, 20.0);
 
     // Gain for velocities
-    nh.param<double>("linear_gain", linGain, 1.5);
+    nh.param<double>("linear_gain", linGain, 1.0);
     nh.param<double>("rotational_gain", rotGain, 2.5);
 
     // Navigation test
-    nh.param<double>("velocity_threshold", velThreshold, 0.02);
+    nh.param<double>("velocity_threshold", velThreshold, 0.1);
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
@@ -507,7 +507,6 @@ void MoveBasic::run()
 
     while (ros::ok()) {
         ros::spinOnce();
-        /*
         collision_checker->min_side_dist = minSideDist;
         forwardObstacleDist = collision_checker->obstacle_dist(true,
                                                                leftObstacleDist,
@@ -519,7 +518,6 @@ void MoveBasic::run()
         msg.y = leftObstacleDist;
         msg.z = rightObstacleDist;
         obstacle_dist_pub.publish(msg);
-        */
         r.sleep();
     }
 }
@@ -560,7 +558,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         double angleRemaining = requestedYaw - currentYaw;
         normalizeAngle(angleRemaining);
 
-        ROS_INFO("%f", angleRemaining);
+        //ROS_INFO("%f", angleRemaining);
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
         double velocity = std::max(-maxAngularVelocity,
@@ -606,10 +604,10 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     tf2::Vector3 remaining = goalInBase.getOrigin();
     bool forward = (remaining.x() > 0);
     double requestedDistance = remaining.length();
-    double prevDistRemaining = 0;
+    double prevDistRemaining = requestedDistance;
     bool pausingForObstacle = false;
+    ros::Time last;
     ros::Time obstacleTime;
-    ros::Time last = ros::Time::now();
     ros::Duration abortTimeout(abortTimeoutSecs);
 
     // For lateral control
@@ -633,7 +631,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(remaining.x() * remaining.x() + remaining.y() * remaining.y());
-        ROS_INFO("%f", distRemaining);
 
         // PID loop to control rotation to keep robot on path
         double rotation = 0.0;
@@ -659,29 +656,20 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         errorPub.publish(pid_debug);
 
         /* Collision Avoidance */
-        // TODO: double obstacleDist = forwardObstacleDist;
-        // TODO: TEST THIS PART!
-        bool backward = (requestedDistance > 0.0);
-        collision_checker->min_side_dist = minSideDist;
-        double obstacleDist = collision_checker->obstacle_dist(backward,
-                                                        leftObstacleDist,
-                                                        rightObstacleDist,
-                                                        forwardLeft,
-                                                        forwardRight);
-        geometry_msgs::Vector3 msg;
-        msg.x = forwardObstacleDist;
-        msg.y = leftObstacleDist;
-        msg.z = rightObstacleDist;
-        obstacle_dist_pub.publish(msg);
 
-        // TODO: Test acceleration!
+        double obstacleDist = forwardObstacleDist;
+	if (requestedDistance < 0.0) {
+		obstacleDist = collision_checker->obstacle_dist(false,
+                                                        	leftObstacleDist,
+                                                        	rightObstacleDist,
+                                                        	forwardLeft,
+                                                        	forwardRight);
+	}
+
         double velocity = std::max(-maxLinearVelocity,
                 std::min(linGain*std::min(std::abs(obstacleDist), std::abs(distRemaining)), std::min(maxLinearVelocity,
                     std::sqrt(2.0 * linearAcceleration * std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
 
-        // Stop if there is an obstacle in the distance we would hit in given time
-        // TODO: bool obstacleDetected = obstacleDist <= velocity * forwardObstacleThreshold;
-        // TODO: TEST THIS PART!
         bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
         if (obstacleDetected) {
             velocity = 0;
@@ -706,13 +694,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             pausingForObstacle = false;
         }
 
-        /*
-        if (pausingForObstacle && !obstacleDetected) {
-            ROS_INFO("MoveBasic: Resuming after obstacle has gone");
-            pausingForObstacle = false;
-        }
-        */
-
         /* Abort Checks */
 
         if (actionServer->isPreemptRequested()) {
@@ -731,10 +712,12 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                 done = true;
             }
         }
+	else {
+	    last = ros::Time::now();
+	}
 
         /* Finish Check */
-        // TODO: TEST THIS PART!
-        // TODO: if ((std::abs(velocity) < velThreshold) && !pausingForObstacle && (distRemaining < linearTolerance)) {
+
         if (std::abs(velocity) < velThreshold && distRemaining < linearTolerance) {
             ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
