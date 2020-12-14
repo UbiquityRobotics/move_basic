@@ -67,9 +67,10 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
-    double maxAngularVelocity;
+    double maxTurningVelocity;
     double angularAcceleration;
     double angularTolerance;
+    double maxLateralVelocity;
 
     double maxLinearVelocity;
     double linearAcceleration;
@@ -172,7 +173,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     ros::NodeHandle nh("~");
 
     // Velocity parameters
-    nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
+    nh.param<double>("max_angular_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
@@ -193,6 +194,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
+
+    // Maximum angular velocity during linear portion
+    nh.param<double>("max_lateral_velocity", maxLateralVelocity, 0.5);
 
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 1.0);
@@ -283,7 +287,8 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 // Dynamic reconfigure
 
 void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level){
-    maxAngularVelocity = config.max_angular_velocity;
+    maxTurningVelocity = config.max_turning_velocity;
+    maxLateralVelocity = config.max_lateral_velocity;
     angularAcceleration = config.angular_acceleration;
     maxLinearVelocity = config.max_linear_velocity;
     linearAcceleration = config.linear_acceleration;
@@ -561,8 +566,8 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         //ROS_INFO("%f", angleRemaining);
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
-        double velocity = std::max(-maxAngularVelocity,
-            std::min(rotGain*remaining, std::min(maxAngularVelocity,
+        double velocity = std::max(-maxTurningVelocity,
+            std::min(rotGain*remaining, std::min(maxTurningVelocity,
                     std::sqrt(2.0 * angularAcceleration *remaining))));
 
         if (actionServer->isPreemptRequested()) {
@@ -606,7 +611,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     double requestedDistance = remaining.length();
     double prevDistRemaining = requestedDistance;
     bool pausingForObstacle = false;
-    ros::Time last;
+    ros::Time last = ros::Time::now();
     ros::Time obstacleTime;
     ros::Duration abortTimeout(abortTimeoutSecs);
 
@@ -641,7 +646,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
         // Clamp rotation
-        rotation = std::max(-maxAngularVelocity, std::min(maxAngularVelocity,
+        rotation = std::max(-maxLateralVelocity, std::min(maxLateralVelocity,
                                                           rotation));
         ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f \n",
                   forwardObstacleDist, leftObstacleDist, rightObstacleDist,
