@@ -563,7 +563,6 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         double angleRemaining = requestedYaw - currentYaw;
         normalizeAngle(angleRemaining);
 
-        //ROS_INFO("%f", angleRemaining);
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
         double velocity = std::max(-maxTurningVelocity,
@@ -590,6 +589,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         }
 
         sendCmd(velocity, 0);
+        ROS_DEBUG("Angle remaining: %f, Angular velocity: %f", rad2deg(angleRemaining), velocity);
     }
     return success;
 }
@@ -733,7 +733,9 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         if (!forward) {
             velocity = -velocity;
         }
+
         sendCmd(rotation, velocity);
+        ROS_DEBUG("Distance remaining: %f, Linear velocity: %f", distRemaining, velocity);
     }
     return success;
 }
