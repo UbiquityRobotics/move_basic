@@ -629,7 +629,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         ros::spinOnce();
         r.sleep();
 
-        if (!getTransform("odom", baseFrame, poseDriving)) {
+        if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
              ROS_WARN("MoveBasic: Cannot determine robot pose for linear");
              return false;
         }
