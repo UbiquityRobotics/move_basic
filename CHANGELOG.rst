@@ -2,6 +2,15 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.4.0 (2020-12-16)
+------------------
+* Add PID control for steering
+* Fix final orientation bug
+* Add action goal queueing
+* Separated collision checking and obstacle points
+* Add dynamic reconfigure
+* Contributors: Teodor Janez Podobnik, Rohan Agrawal
+
 0.3.2 (2018-03-03)
 ------------------
 * Don't rotate to go small distances
