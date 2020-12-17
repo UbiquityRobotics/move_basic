@@ -67,11 +67,13 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
+    double minTurningVelocity;
     double maxTurningVelocity;
     double angularAcceleration;
     double angularTolerance;
     double maxLateralVelocity;
 
+    double minLinearVelocity;
     double maxLinearVelocity;
     double linearAcceleration;
     double linearTolerance;
@@ -173,8 +175,10 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     ros::NodeHandle nh("~");
 
     // Velocity parameters
-    nh.param<double>("max_angular_velocity", maxTurningVelocity, 1.0);
+    nh.param<double>("min_turning_velocity", minTurningVelocity, 0.02);
+    nh.param<double>("max_turning_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
+    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.02);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
@@ -287,9 +291,11 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 // Dynamic reconfigure
 
 void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level){
+    minTurningVelocity = config.min_turning_velocity;
     maxTurningVelocity = config.max_turning_velocity;
     maxLateralVelocity = config.max_lateral_velocity;
     angularAcceleration = config.angular_acceleration;
+    minLinearVelocity = config.min_linear_velocity;
     maxLinearVelocity = config.max_linear_velocity;
     linearAcceleration = config.linear_acceleration;
     angularTolerance = config.angular_tolerance;
@@ -576,7 +582,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
             velocity = 0;
         }
 
-        if (std::abs(angleRemaining) < angularTolerance) {
+        if ((std::abs(angleRemaining) < angularTolerance) || (std::abs(velocity) < minTurningVelocity)) {
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
             velocity = 0;
             success = true;
@@ -723,7 +729,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         /* Finish Check */
 
-        if (std::abs(velocity) < velThreshold && distRemaining < linearTolerance) {
+        if (((std::abs(velocity) < velThreshold) || (std::abs(velocity) < minLinearVelocity)) && distRemaining < linearTolerance) {
             ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
             success = true;
