@@ -73,7 +73,6 @@ class MoveBasic {
     double angularTolerance;
     double maxLateralVelocity;
 
-    double minLinearVelocity;
     double maxLinearVelocity;
     double linearAcceleration;
     double linearTolerance;
@@ -178,7 +177,6 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("min_turning_velocity", minTurningVelocity, 0.02);
     nh.param<double>("max_turning_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
-    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.02);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
@@ -295,7 +293,6 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
     maxTurningVelocity = config.max_turning_velocity;
     maxLateralVelocity = config.max_lateral_velocity;
     angularAcceleration = config.angular_acceleration;
-    minLinearVelocity = config.min_linear_velocity;
     maxLinearVelocity = config.max_linear_velocity;
     linearAcceleration = config.linear_acceleration;
     angularTolerance = config.angular_tolerance;
@@ -571,7 +568,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
-        double velocity = std::max(-maxTurningVelocity,
+        double velocity = std::max(minTurningVelocity,
             std::min(rotGain*remaining, std::min(maxTurningVelocity,
                     std::sqrt(2.0 * angularAcceleration *remaining))));
 
@@ -582,7 +579,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
             velocity = 0;
         }
 
-        if ((std::abs(angleRemaining) < angularTolerance) || (std::abs(velocity) < minTurningVelocity)) {
+        if (std::abs(angleRemaining) < angularTolerance) {
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
             velocity = 0;
             success = true;
@@ -677,9 +674,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                                                         	forwardRight);
 	}
 
-        double velocity = std::max(-maxLinearVelocity,
-                std::min(linGain*std::min(std::abs(obstacleDist), std::abs(distRemaining)), std::min(maxLinearVelocity,
-                    std::sqrt(2.0 * linearAcceleration * std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
+        double velocity = std::min(linGain*std::min(std::abs(obstacleDist), std::abs(distRemaining)),
+                std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration * std::min(std::abs(obstacleDist), std::abs(distRemaining)))));
 
         bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
         if (obstacleDetected) {
@@ -729,7 +725,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         /* Finish Check */
 
-        if (((std::abs(velocity) < velThreshold) || (std::abs(velocity) < minLinearVelocity)) && distRemaining < linearTolerance) {
+        if ((std::abs(velocity) < velThreshold) && distRemaining < linearTolerance) {
             ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
             success = true;
