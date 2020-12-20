@@ -88,6 +88,7 @@ class MoveBasic {
     double abortTimeoutSecs;
     double obstacleWaitThreshold;
     double forwardObstacleThreshold;
+    double localizationLatency;
 
     std::string preferredPlanningFrame;
     std::string alternatePlanningFrame;
@@ -178,7 +179,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("max_turning_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
-    nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
+    nh.param<double>("linear_acceleration", linearAcceleration, 0.1);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
     nh.param<double>("linear_tolerance", linearTolerance, 0.1);
 
@@ -202,6 +203,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 1.0);
+
+    // how long to wait after moving to be sure localization is accurate
+    nh.param<double>("localization_latency", localizationLatency, 0.5);
 
     // Time which the robot can be driving away from the goal
     nh.param<double>("abort_timeout", abortTimeoutSecs, 5.0);
@@ -297,6 +301,7 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
     linearAcceleration = config.linear_acceleration;
     angularTolerance = config.angular_tolerance;
     linearTolerance = config.linear_tolerance;
+    localizationLatency = config.localization_latency;
     lateralKp = config.lateral_kp;
     lateralKi = config.lateral_ki;
     lateralKd = config.lateral_kd;
@@ -345,6 +350,12 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     /*
       Plan a path that involves rotating to face the goal, going straight towards it,
       and then rotating for the final orientation.
+
+      It is assumed that we are dealing with imperfect localization data:
+      map->base_link is accurate but may be delayed and is at a slow rate
+      odom->base_link is frequent, but drifts, particularly after rotating
+      To counter these issues, we plan in the map frame, and wait localizationLatency
+      after each step, and execute in the odom frame.
     */
 
     tf2::Transform goal;
@@ -477,10 +488,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
                 return;
             }
         }
+        sleep(localizationLatency);
+
         // Linear portion
         if (!moveLinear(goalInDriving, drivingFrame)) {
             return;
         }
+        sleep(localizationLatency);
 
         // Final rotation
         if (std::abs(goalYaw - (yaw + requestedYaw)) > angularTolerance) {
