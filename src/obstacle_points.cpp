@@ -139,6 +139,7 @@ void ObstaclePoints::scan_callback(const sensor_msgs::LaserScan::ConstPtr &msg)
             fromMsg(base_normal.vector, lidar_normal);
 
             have_lidar = true;
+            ROS_INFO("Lidar configured");
         }
         catch (tf2::TransformException &ex) {
             ROS_WARN("%s", ex.what());

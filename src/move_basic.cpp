@@ -371,9 +371,13 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     ROS_INFO("MoveBasic: Received goal %f %f %f %s", x, y, rad2deg(yaw), frameId.c_str());
 
+    bool do_final_rotation = true;
     if (std::isnan(yaw)) {
-        abortGoal("MoveBasic: Aborting goal because an invalid orientation was specified");
-        return;
+        // abortGoal("MoveBasic: Aborting goal because an invalid orientation was specified");
+        // return;
+        ROS_WARN("Recieved a goal with invalid orientation, will go to it but not do final turn");
+        do_final_rotation = false;
+
     }
 
     // The pose of the robot planning frame MUST be known initially, and may or may not
@@ -497,11 +501,14 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         sleep(localizationLatency);
 
         // Final rotation
-        if (std::abs(goalYaw - (yaw + requestedYaw)) > angularTolerance) {
-            if (!rotate(goalYaw - (yaw + requestedYaw), drivingFrame)) {
-                return;
+        if(do_final_rotation){
+            if (std::abs(goalYaw - (yaw + requestedYaw)) > angularTolerance) {
+                if (!rotate(goalYaw - (yaw + requestedYaw), drivingFrame)) {
+                    return;
+                }
             }
         }
+        
     }
 
     actionServer->setSucceeded();
