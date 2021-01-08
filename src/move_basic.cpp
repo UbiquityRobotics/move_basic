@@ -375,7 +375,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     if (std::isnan(yaw)) {
         // abortGoal("MoveBasic: Aborting goal because an invalid orientation was specified");
         // return;
-        ROS_WARN("Recieved a goal with invalid orientation, will go to it but not do final turn");
+        ROS_WARN("Recieved a goal with an invalid orientation, will set goal but without final turn");
         do_final_rotation = false;
 
     }
