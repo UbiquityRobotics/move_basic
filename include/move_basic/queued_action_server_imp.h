@@ -131,9 +131,16 @@ QueuedActionServer<ActionSpec>::acceptNewGoal() {
 }
 
 template <class ActionSpec>
+boost::shared_ptr<const typename QueuedActionServer<ActionSpec>::Goal>
+QueuedActionServer<ActionSpec>::getQueuedGoalState() {
+    return next_goal.getGoal();
+}
+
+template <class ActionSpec>
 bool QueuedActionServer<ActionSpec>::isNewGoalAvailable() {
     return new_goal_;
 }
+
 
 template <class ActionSpec>
 bool QueuedActionServer<ActionSpec>::isPreemptRequested() {
@@ -179,7 +186,7 @@ void QueuedActionServer<ActionSpec>::goalCallback(GoalHandle goal) {
     // check that the timestamp is past or equal to that of the current goal and the next goal
     if ((!current_goal.getGoal() || goal.getGoalID().stamp >= current_goal.getGoalID().stamp) &&
         (!next_goal.getGoal() || goal.getGoalID().stamp >= next_goal.getGoalID().stamp)) {
-	
+
         // if next_goal has not been accepted already... its going to get bumped, but we need to let
         // the client know we're preempting
         if (next_goal.getGoal() && (!current_goal.getGoal() || next_goal != current_goal)) {

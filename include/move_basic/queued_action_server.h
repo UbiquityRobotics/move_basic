@@ -62,6 +62,7 @@ public:
     ~QueuedActionServer();
 
     boost::shared_ptr<const Goal> acceptNewGoal();
+    boost::shared_ptr<const Goal> getQueuedGoalState();
     bool isNewGoalAvailable();
     bool isPreemptRequested();
     bool isActive();
