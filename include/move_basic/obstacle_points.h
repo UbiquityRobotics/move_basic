@@ -35,6 +35,7 @@
 #include <vector>
 #include <utility>
 #include <mutex>
+#include <boost/geometry/algorithms/simplify.hpp>
 
 #include <ros/ros.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -81,14 +82,15 @@ private:
   };
 
   std::mutex points_mutex;
-   
+
   std::string baseFrame;
+  float range_max;
 
   std::map<std::string, RangeSensor> sensors;
   ros::Subscriber sonar_sub;
   ros::Subscriber scan_sub;
   tf2_ros::Buffer& tf_buffer;
-   
+
   bool have_lidar;
   tf2::Vector3 lidar_origin;
   tf2::Vector3 lidar_normal;
@@ -111,7 +113,7 @@ public:
    *
    */
   std::vector<tf2::Vector3> get_points(ros::Duration max_age);
- 
+
   /*
    * Returns a vector of lines (expressed as a pair of 2 points).
    * The lines are based on the end of the sonar cones, filtered
@@ -121,7 +123,7 @@ public:
   typedef std::pair<tf2::Vector3, tf2::Vector3> Line;
   std::vector<Line> get_lines(ros::Duration max_age);
 
-  // Used for unit testing things that use ObstaclePoints 
+  // Used for unit testing things that use ObstaclePoints
   // without having to go through ROS messages
   void add_test_point(tf2::Vector3 p);
   void clear_test_points();
@@ -129,4 +131,3 @@ public:
 };
 
 #endif
-
