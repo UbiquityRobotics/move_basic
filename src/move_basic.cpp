@@ -188,7 +188,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("angular_acceleration", maxAngularAcceleration, 5.0);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("linear_acceleration", maxLinearAcceleration, 1.1);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.7);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.1);
 
     // Parameters for turn PID
     nh.param<double>("lateral_kp", lateralKp, 2.0);
@@ -198,7 +198,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // To prevent sliping and tipping over when turning
     nh.param<double>("max_incline_without_slipping", maxIncline, 0.01);
     nh.param<double>("gravity_acceleration", gravityConstant, 9.81);
-    nh.param<double>("max_lateral_deviation", maxLateralDev, 0.4);
+    nh.param<double>("max_lateral_deviation", maxLateralDev, 0.1);
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
@@ -216,7 +216,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("abort_timeout", abortTimeoutSecs, 60.0);
 
     // Proportional controller for following the goal
-    nh.param<double>("velocity_threshold", velThreshold, 0.05);
+    nh.param<double>("velocity_threshold", velThreshold, 0.1);
     nh.param<double>("velocity_multiplier", velMult, 0.7);
 
     nh.param<std::string>("preferred_driving_frame",
@@ -549,7 +549,7 @@ bool MoveBasic::controlToRefPose(bool reverseWithoutTurning,
             }
 
             // Check navigation task complete //
-            if (distRemaining < linearTolerance) {
+            if (distRemaining < linearTolerance + maxLateralDev) {
                 if (actionServer->isNewGoalAvailable()) { // If next goal available keep up with velocity
                     ROS_INFO("MoveBasic: Intermitent goal reached - ERROR: x: %f meters, y: %f meters, yaw: %f degrees", remaining.x(), remaining.y(), rad2deg(angleRemaining));
                     done = true;
