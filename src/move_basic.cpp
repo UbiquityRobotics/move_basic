@@ -695,8 +695,13 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                                                         	forwardRight);
 	}
 
-        double velocity = std::min(linGain*std::min(std::abs(obstacleDist), std::abs(distRemaining)),
-                std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration * std::min(std::abs(obstacleDist), std::abs(distRemaining)))));
+        double minLinearVelocity = 0.001; // TODO add to rosparam
+        double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
+        double velocity = std::max(minLinearVelocity,
+            std::min(maxLinearVelocity, std::min(
+              std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
+              std::sqrt(0.5 * linearAcceleration *
+                 std::min(obstacleDist, distRemaining)))));
 
         bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
         if (obstacleDetected) {
