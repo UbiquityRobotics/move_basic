@@ -72,7 +72,7 @@
 #include "move_basic/collision_checker.h"
 
 
-CollisionChecker::CollisionChecker(ros::NodeHandle& nh, tf2_ros::Buffer &tf_buffer, 
+CollisionChecker::CollisionChecker(ros::NodeHandle& nh, tf2_ros::Buffer &tf_buffer,
 		                   ObstaclePoints& op) : tf_buffer(tf_buffer),
 	                                                 ob_points(op)
 {
@@ -257,7 +257,7 @@ float CollisionChecker::obstacle_dist(bool forward,
     fl.setY(min_dist_left);
     fr.setX(robot_front_length);
     fr.setY(min_dist_right);
-    
+
     auto pts = ob_points.get_points(ros::Duration(max_age));
     for (const auto& p : pts) {
        float y = p.y();
@@ -288,7 +288,7 @@ float CollisionChecker::obstacle_dist(bool forward,
 
     draw_line(tf2::Vector3(robot_front_length, -min_dist_right, 0),
               tf2::Vector3(robot_front_length + 2, -min_dist_right, 0), 0, 0.5, 0, 20003);
- 
+
     // Blue
     draw_line(tf2::Vector3(robot_front_length, min_dist_left, 0),
               tf2::Vector3(fl.x(), fl.y(), 0), 0, 0, 1, 30000);
@@ -473,12 +473,12 @@ float CollisionChecker::obstacle_arc_angle(double linear, double angular) {
     const auto point_of_rotation = tf2::Vector3(0, (left) ? radius : -radius, 0);
 
     // Critical robot corners relative to point of rotation
-    const auto outer_point = tf2::Vector3(-robot_back_length, 
+    const auto outer_point = tf2::Vector3(-robot_back_length,
             (left) ? -robot_width: robot_width, 0) - point_of_rotation;
-    const auto inner_point = tf2::Vector3(robot_front_length, 
+    const auto inner_point = tf2::Vector3(robot_front_length,
             (left) ? robot_width: -robot_width, 0) - point_of_rotation;
 
-    // Critical robot points in polar (r^2, theta) form relative to center 
+    // Critical robot points in polar (r^2, theta) form relative to center
     // of rotation
     const float outer_radius_sq = outer_point.length2();
     const float outer_theta = std::atan2(outer_point.y(), outer_point.x());
@@ -509,10 +509,10 @@ float CollisionChecker::obstacle_arc_angle(double linear, double angular) {
     float closest_angle = M_PI;
     const auto points = ob_points.get_points(ros::Duration(max_age));
     for (const auto& p : points) {
-        // Trasform the obstacle point into the coordiate system with the 
+        // Trasform the obstacle point into the coordiate system with the
         // point of rotation at the origin, with the same orientation as base_link
         const tf2::Vector3 p_in_rot = p - point_of_rotation;
-        // Radius for polar coordinates around center of rotation 
+        // Radius for polar coordinates around center of rotation
         const float p_radius_sq = p_in_rot.length2();
 
         if(p_radius_sq < outer_radius_sq && p_radius_sq > inner_radius_sq) {

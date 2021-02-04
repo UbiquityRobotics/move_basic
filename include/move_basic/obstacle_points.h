@@ -43,6 +43,25 @@
 #include <sensor_msgs/Range.h>
 #include <sensor_msgs/LaserScan.h>
 
+// lidar sensor
+class LidarSensor
+{
+public:
+    std::string frame_id;
+    double angle_increment;
+    double min_range;
+    double max_range;
+    double min_angle;
+    double max_angle;
+    LidarSensor() {};
+    void reset(const std::string & _frame,
+               const int _increment,
+               const double & _min_range,
+               const double & _max_range,
+               const double & _min_angle,
+               const double & _max_angle);
+};
+
 // a single sensor with current obstacles
 class RangeSensor
 {
@@ -81,19 +100,23 @@ private:
   };
 
   std::mutex points_mutex;
-   
+
   std::string baseFrame;
 
+  LidarSensor lidar;
   std::map<std::string, RangeSensor> sensors;
   ros::Subscriber sonar_sub;
   ros::Subscriber scan_sub;
   tf2_ros::Buffer& tf_buffer;
-   
+
   bool have_lidar;
   tf2::Vector3 lidar_origin;
   tf2::Vector3 lidar_normal;
   std::vector<PolarLine> lidar_points;
   ros::Time lidar_stamp;
+
+  // Sine / Cosine LookUp Tables
+  std::vector<float> sinLUT, cosLUT;
 
   // Manually added points, used for unit testing things that
   // use ObstaclePoints without having to go through ROS messages
@@ -111,7 +134,7 @@ public:
    *
    */
   std::vector<tf2::Vector3> get_points(ros::Duration max_age);
- 
+
   /*
    * Returns a vector of lines (expressed as a pair of 2 points).
    * The lines are based on the end of the sonar cones, filtered
@@ -121,7 +144,7 @@ public:
   typedef std::pair<tf2::Vector3, tf2::Vector3> Line;
   std::vector<Line> get_lines(ros::Duration max_age);
 
-  // Used for unit testing things that use ObstaclePoints 
+  // Used for unit testing things that use ObstaclePoints
   // without having to go through ROS messages
   void add_test_point(tf2::Vector3 p);
   void clear_test_points();
@@ -129,4 +152,3 @@ public:
 };
 
 #endif
-
