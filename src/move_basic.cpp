@@ -61,6 +61,7 @@ typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseAc
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber stopSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
@@ -89,6 +90,7 @@ class MoveBasic {
     double maxLateralDev;
 
     int goalId;
+    bool stop;
 
     double lateralKp;
     double lateralKi;
@@ -114,10 +116,11 @@ class MoveBasic {
     dynamic_reconfigure::Server<move_basic::MovebasicConfig> dr_srv;
 
     void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level);
-    void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+    void goalCallback(const geometry_msgs::PoseStamped::ConstPtr& msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void sendCmd(double angular, double linear);
     void abortGoal(const std::string msg);
+    void stopCallback(const std_msgs::Bool::ConstPtr& msg);
 
     double limitLinearVelocity(const double& velocity);
     double limitAngularVelocity(const double& velocity);
@@ -145,14 +148,6 @@ class MoveBasic {
 static double rad2deg(double rad)
 {
     return rad * 180.0 / M_PI;
-}
-
-
-// Degrees to radians
-
-static double deg2rad(double deg)
-{
-    return deg / 180.0 * M_PI;
 }
 
 // Adjust angle to be between -PI and PI
@@ -236,6 +231,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<std::string>("base_frame", baseFrame, "base_link");
 
     goalId = 1;
+    stop = false;
 
     dynamic_reconfigure::Server<move_basic::MovebasicConfig>::CallbackType f;
     f = boost::bind(&MoveBasic::dynamicReconfigCallback, this, _1, _2);
@@ -249,6 +245,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
+    stopSub = nh.subscribe("/move_basic/stop", 1,
+                            &MoveBasic::stopCallback, this);
 
     ros::NodeHandle actionNh("");
 
@@ -309,7 +307,7 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 // Dynamic reconfigure
 
-void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level){
+void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t){
     maxAngularVelocity = config.max_angular_velocity;
     maxAngularAcceleration = config.max_angular_acceleration;
     maxLinearVelocity = config.max_linear_velocity;
@@ -327,6 +325,13 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
     ROS_WARN("Parameter change detected");
 }
 
+// Stop robot in place and save last state
+
+void MoveBasic::stopCallback(const std_msgs::Bool::ConstPtr& msg)
+{
+    stop = msg->data;
+    if (stop) ROS_WARN("MoveBasic: Robot is forced to stop!");
+}
 
 // Called when a simple goal message is received
 
@@ -462,6 +467,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
 void MoveBasic::sendCmd(double angular, double linear)
 {
+   if (stop) { angular = 0; linear = 0; }
    geometry_msgs::Twist msg;
    msg.angular.z = angular;
    msg.linear.x = linear;
@@ -548,6 +554,11 @@ bool MoveBasic::rotate(double& finalOrientation,
         double pidAngularVelocity = (lateralKp * lateralError) + (lateralKi * lateralIntegral) + (lateralKd * lateralDiff);
         double angularAccelerationConstraint = std::sqrt(previousAngularVelocity + 2.0 * maxAngularAcceleration * obstacleAngle);
         double angularVelocity = limitAngularVelocity(std::min(pidAngularVelocity, angularAccelerationConstraint));
+
+        if (actionServer->isNewGoalAvailable()) {
+            angularVelocity = 0;
+            done = true;
+        }
 
         previousAngleRemaining = angleRemaining;
         previousAngularVelocity = angularVelocity;
@@ -664,8 +675,9 @@ bool MoveBasic::trajectoryFollow(const bool reverseWithoutTurning,
         double angularDevVelocity = std::max((maxAngleDev - (std::abs(angleRemaining) / 2)) / maxAngleDev, 0.0) * maxLinearVelocity;
         double linearAccelerationConstraint = std::sqrt(previousLinearVelocity + 2.0 * maxLinearAcceleration *
                                                                             std::min(obstacleDist, distRemaining));
+        double proportionalControl = distRemaining;
         linearVelocity = limitLinearVelocity(std::min(angularDevVelocity,
-                    std::min(distRemaining, linearAccelerationConstraint)));
+                    std::min(proportionalControl, linearAccelerationConstraint)));
 
         // Lateral control
         lateralError = angleRecoverWeight * angleRemaining;
