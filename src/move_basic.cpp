@@ -179,7 +179,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("max_turning_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
-    nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
+    nh.param<double>("linear_acceleration", linearAcceleration, 0.1);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
     nh.param<double>("linear_tolerance", linearTolerance, 0.1);
 
