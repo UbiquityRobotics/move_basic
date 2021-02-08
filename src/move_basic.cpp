@@ -108,7 +108,7 @@ class MoveBasic {
 
     dynamic_reconfigure::Server<move_basic::MovebasicConfig> dr_srv;
 
-    void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level);
+    void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
@@ -208,7 +208,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
     // Time which the robot can be driving away from the goal
-    nh.param<double>("abort_timeout", abortTimeoutSecs, 5.0);
+    nh.param<double>("abort_timeout", abortTimeoutSecs, 0.1);
 
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_threshold", obstacleWaitThreshold, 60.0);
@@ -292,7 +292,7 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 // Dynamic reconfigure
 
-void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level){
+void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t){
     minTurningVelocity = config.min_turning_velocity;
     maxTurningVelocity = config.max_turning_velocity;
     maxLateralVelocity = config.max_lateral_velocity;
@@ -725,7 +725,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         }
 
         if (distRemaining > prevDistRemaining) {
-            prevDistRemaining = distRemaining;
             if (ros::Time::now() - last > abortTimeout) {
                 abortGoal("MoveBasic: No progress towards goal for longer than timeout");
                 velocity = 0;
@@ -733,9 +732,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                 done = true;
             }
         }
-	else {
-	    last = ros::Time::now();
-	}
+	else last = ros::Time::now();
+        prevDistRemaining = distRemaining;
 
         /* Finish Check */
 
