@@ -355,9 +355,10 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     ROS_INFO("MoveBasic: Received goal %f %f %f %s", x, y, rad2deg(yaw), frameId.c_str());
 
+    bool do_final_rotation = true;
     if (std::isnan(yaw)) {
-        abortGoal("MoveBasic: Aborting goal because an invalid orientation was specified");
-        return;
+        ROS_WARN("MoveBasic: Received a goal with invalid orientation, will go to it but not do final turn");
+        do_final_rotation = false;
     }
 
     std::string planningFrame;
@@ -491,9 +492,11 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     // Final rotation as specified in goal
     tf2::Transform finalPose;
-    if (!getTransform(baseFrame, drivingFrame, finalPose)) {
-         abortGoal("MoveBasic: Cannot determine robot pose for final rotation");
-         return;
+    if (do_final_rotation) {
+        if (!getTransform(baseFrame, drivingFrame, finalPose)) {
+            abortGoal("MoveBasic: Cannot determine robot pose for final rotation");
+            return;
+        }
     }
 
     getPose(finalPose, x, y, yaw);
