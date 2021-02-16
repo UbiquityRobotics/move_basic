@@ -98,6 +98,7 @@ class MoveBasic {
     double robotWidth;
     double frontToLidar;
     double obstacleWaitLimit;
+    double abortTimeoutSecs;
 
     std::string preferredPlanningFrame;
     std::string alternatePlanningFrame;
@@ -219,6 +220,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 
     // Maximum deviation from linear path before aborting
     nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
+
+    // Time which the robot can be driving away from the goal
+    nh.param<double>("abort_timeout", abortTimeoutSecs, 0.1);
 
     // Maximum allowed deviation from straight path
     nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(20.0));
@@ -491,7 +495,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         sleep(localizationLatency);
     }
 
-    // TODO: final orientation bug
     // Final rotation as specified in goal
     tf2::Transform finalPose;
     if (!getTransform(baseFrame, drivingFrame, finalPose)) {
@@ -592,7 +595,6 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         double velocity = 0;
 
-        // TODO: reverse function at the end of function
         if (angleRemaining < 0.0) {
             velocity = -speed;
         }
@@ -636,6 +638,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     int  waitingLoops = 0;
     double forwardObstacleThreshold = 1.5;  // if distance <  velocity times this we stop
     ros::Time obstacleTime;
+    ros::Time last = ros::Time::now();
+    ros::Duration abortTimeout(abortTimeoutSecs);
 
     tf2::Transform poseDrivingInitial;
     if (!getTransform(baseFrame, drivingFrame, poseDrivingInitial)) {
@@ -647,6 +651,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                            goalInDriving.getOrigin());
     linear.setZ(0);
     double requestedDistance = linear.length();
+    double prevDistRemaining = requestedDistance;
 
     tf2::Transform poseDriving;
     if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
@@ -812,6 +817,18 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             done = true;
             velocity = 0;
         }
+
+        if (distRemaining > prevDistRemaining) {
+            if (ros::Time::now() - last > abortTimeout) {
+                abortGoal("MoveBasic: No progress towards goal for longer than timeout");
+                velocity = 0;
+                return false;
+            }
+        }
+        else {
+            last = ros::Time::now();
+        }
+        prevDistRemaining = distRemaining;
 
         if (std::abs(remaining.x()) < linearTolerance) {
             velocity = 0;
