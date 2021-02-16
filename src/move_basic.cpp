@@ -53,12 +53,6 @@
 
 typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
 
-enum {
-    DRIVE_STRAIGHT,
-    FOLLOW_LEFT,
-    FOLLOW_RIGHT
-};
-
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
@@ -76,8 +70,8 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
-    double maxAngularVelocity;
-    double minAngularVelocity;
+    double maxTurningVelocity;
+    double minTurningVelocity;
     double angularAcceleration;
     double angularTolerance;
 
@@ -90,7 +84,7 @@ class MoveBasic {
     double lateralKp;
     double lateralKi;
     double lateralKd;
-    double lateralMaxRotation;
+    double maxLateralVelocity;
 
     int rotationAttempts;
     double localizationLatency;
@@ -200,8 +194,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 {
     ros::NodeHandle nh("~");
 
-    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.05);
-    nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
+    nh.param<double>("min_angular_velocity", minTurningVelocity, 0.05);
+    nh.param<double>("max_angular_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
     nh.param<double>("angular_tolerance", angularTolerance, 0.01);
 
@@ -228,7 +222,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(20.0));
 
     // Maximum angular velocity during linear portion
-    nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
+    nh.param<double>("max_lateral_velocity", maxLateralVelocity, 0.5);
 
     // Weighting of turning to recover from avoiding side obstacles
     nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
@@ -588,8 +582,8 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
-        double speed = std::max(minAngularVelocity,
-            std::min(maxAngularVelocity,
+        double speed = std::max(minTurningVelocity,
+            std::min(maxTurningVelocity,
               std::sqrt(2.0 * angularAcceleration *
                 (remaining - angularTolerance))));
 
@@ -714,10 +708,10 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         bool canTurn = std::abs(cyaw) <= maxTurn;
         if (canTurn && forwardObstacleDist < 1.0) {
             if (leftObstacleDist > rightObstacleDist) {
-               lateralError = lateralMaxRotation;
+               lateralError = maxLateralVelocity;
             }
             else {
-               lateralError = -lateralMaxRotation;
+               lateralError = -maxLateralVelocity;
             }
         }
 */
@@ -739,7 +733,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                    (lateralKd * lateralDiff);
 
         // Clamp rotation
-        rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
+        rotation = std::max(-maxLateralVelocity, std::min(maxLateralVelocity,
                                                           rotation));
 
         // Limit angular deviation from planned path to prevent turning around
