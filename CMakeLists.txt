@@ -15,23 +15,35 @@ find_package(catkin REQUIRED COMPONENTS
   move_base_msgs
   nav_core
   dynamic_reconfigure
+  message_generation
+  message_runtime
 )
 
 generate_dynamic_reconfigure_options(
   cfg/Movebasic.cfg
 )
 
-# Generate messages in the 'msg' folder
-add_message_files(
-  FILES
-  FollowMode.msg
-)
-generate_messages(
-  DEPENDENCIES
-  std_msgs
-)
+#generate_messages(
+#  DEPENDENCIES
+#  std_msgs
+#)
 
-catkin_package(INCLUDE_DIRS DEPENDS)
+catkin_package(
+  INCLUDE_DIRS
+  DEPENDS
+  CATKIN_DEPENDS
+  dynamic_reconfigure
+  roscpp
+  sensor_msgs
+  actionlib
+  std_msgs
+  move_base_msgs
+  geometry_msgs
+  visualization_msgs
+  actionlib_msgs
+  std_msgs
+  rostest
+)
 
 ###########
 ## Build ##

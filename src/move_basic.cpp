@@ -90,7 +90,7 @@ class MoveBasic {
     double forwardObstacleThreshold;
     double minSideDist;
     double localizationLatency;
-    double localizationDev;
+    double runawayTimeoutSecs;
     bool stop;
 
     float forwardObstacleDist;
@@ -202,8 +202,8 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
-    // Maximum deviation of localization
-    nh.param<double>("localization_deviation", localizationDev, 0.5);
+    // how long robot can be driving away from the goal
+    nh.param<double>("runaway_timeout", runawayTimeoutSecs, 1.0);
 
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_threshold", obstacleWaitThreshold, 60.0);
@@ -308,7 +308,6 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
     lateralKd = config.lateral_kd;
 
     localizationLatency = config.localization_latency;
-    localizationDev = config.localization_deviation;
 
     minSideDist = config.min_side_dist;
     obstacleWaitThreshold = config.obstacle_wait_threshold;
@@ -639,10 +638,11 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     bool forward = (remaining.x() > 0);
     remaining.setZ(0);
     double requestedDistance = remaining.length();
-    double prevDistRemaining = requestedDistance;
 
     bool pausingForObstacle = false;
     ros::Time obstacleTime;
+    ros::Duration runawayTimeout(runawayTimeoutSecs);
+    ros::Time last = ros::Time::now();
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -700,7 +700,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         double velocity = std::max(minLinearVelocity,
 		std::min(std::min(std::abs(obstacleDist), std::abs(distRemaining)),
-                	std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration * 
+                	std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration *
 								    std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
 
         bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
@@ -734,17 +734,18 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         }
 
         /* Since we are dealing with imperfect localization we should make
-         * sure we are at least maximum localization deviation driving away from the goal*/
-        double distDelta = prevDistRemaining - distRemaining;
-        if (distDelta < -localizationDev) {
-            abortGoal("MoveBasic: Moving away from goal");
-            sendCmd(0, 0);
-            return false;
+         * sure we are at least runawayTimeout driving away from the goal*/
+        double angleRemaining = std::atan2(remaining.y(), remaining.x());
+        if (std::cos(angleRemaining) < 0) {
+            if (ros::Time::now() - last > runawayTimeout) {
+                abortGoal("MoveBasic: Moving away from goal");
+                sendCmd(0, 0);
+                return false;
+            }
         }
-
-        // Only update the distance when moving closer to the goal
-        if (distDelta > 0) {
-            prevDistRemaining = distRemaining;
+        else {
+            // Only update time when moving towards the goal
+            last = ros::Time::now();
         }
 
         /* Finish Check */
