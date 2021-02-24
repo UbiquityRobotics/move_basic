@@ -182,22 +182,22 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     ros::NodeHandle nh("~");
 
     // Velocity parameters
-    nh.param<double>("min_turning_velocity", minTurningVelocity, 0.02);
+    nh.param<double>("min_turning_velocity", minTurningVelocity, 0.18);
     nh.param<double>("max_turning_velocity", maxTurningVelocity, 1.0);
     nh.param<double>("max_lateral_velocity", maxLateralVelocity, 0.5);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
-    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.5);
+    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.1);
-    nh.param<double>("turning_acceleration", turningAcceleration, 0.3);
+    nh.param<double>("turning_acceleration", turningAcceleration, 0.2);
 
     // Within tolerance, goal is successfully reached
-    nh.param<double>("angular_tolerance", angularTolerance, 0.01);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.01);
+    nh.param<double>("angular_tolerance", angularTolerance, 0.05);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.05);
 
     // PID parameters for lateral control
-    nh.param<double>("lateral_kp", lateralKp, 2.0);
+    nh.param<double>("lateral_kp", lateralKp, 0.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 20.0);
+    nh.param<double>("lateral_kd", lateralKd, 3.0);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
@@ -308,6 +308,7 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
     lateralKd = config.lateral_kd;
 
     localizationLatency = config.localization_latency;
+    runawayTimeoutSecs = config.runaway_timeout;
 
     minSideDist = config.min_side_dist;
     obstacleWaitThreshold = config.obstacle_wait_threshold;
@@ -593,7 +594,6 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
                     std::sqrt(2.0 * turningAcceleration *remaining))));
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
-	    ROS_INFO("Change of sign!!Change of sign!!!!");
             oscillations++;
         }
         prevAngleRemaining = angleRemaining;
@@ -601,11 +601,11 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping rotation due to preempt");
             sendCmd(0, 0);
+            actionServer->setPreempted();
             return false;
         }
 
         if (std::abs(angleRemaining) < angularTolerance || oscillations > 2) {
-	    ROS_INFO_STREAM("oscillations: " << oscillations);
             ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
             velocity = 0;
             done = true;
@@ -729,6 +729,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         // Abort Checks
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping move due to preempt");
+            actionServer->setPreempted();
             sendCmd(0, 0);
             return false;
         }
