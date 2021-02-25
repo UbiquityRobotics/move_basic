@@ -467,8 +467,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     tf2::Vector3 linear = goalInBase.getOrigin();
     linear.setZ(0);
     double dist = linear.length();
-    bool reverseWithoutTurning =
-        (reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
+    bool reverseWithoutTurning = false; //(reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
 
     if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
         ROS_WARN("MoveBasic: Cannot determine robot pose for rotation");
