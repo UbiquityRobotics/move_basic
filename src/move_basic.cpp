@@ -85,7 +85,6 @@ class MoveBasic {
     double rotGain;
     double velThreshold;
 
-    double abortTimeoutSecs;
     double obstacleWaitThreshold;
     double forwardObstacleThreshold;
     double localizationLatency;
@@ -98,17 +97,17 @@ class MoveBasic {
 
     double minSideDist;
     double sideRecoverWeight;
+    double runawayTimeoutSecs;
 
     float forwardObstacleDist;
     float leftObstacleDist;
     float rightObstacleDist;
     tf2::Vector3 forwardLeft;
     tf2::Vector3 forwardRight;
-    double reverseWithoutTurningThreshold;
 
     dynamic_reconfigure::Server<move_basic::MovebasicConfig> dr_srv;
 
-    void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level);
+    void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
@@ -195,6 +194,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Navigation test
     nh.param<double>("velocity_threshold", velThreshold, 0.1);
 
+    // how long robot can be driving away from the goal
+    nh.param<double>("runaway_timeout", runawayTimeoutSecs, 1.0);
+
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
 
@@ -207,18 +209,11 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
-    // Time which the robot can be driving away from the goal
-    nh.param<double>("abort_timeout", abortTimeoutSecs, 5.0);
-
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_threshold", obstacleWaitThreshold, 60.0);
 
     // if distance <  velocity times this we stop
     nh.param<double>("forward_obstacle_threshold", forwardObstacleThreshold, 0.5);
-
-    // Reverse distances for which rotation won't be performed
-    nh.param<double>("reverse_without_turning_threshold",
-                      reverseWithoutTurningThreshold, 0.5);
 
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
@@ -292,7 +287,7 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
 
 // Dynamic reconfigure
 
-void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t level){
+void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t){
     minTurningVelocity = config.min_turning_velocity;
     maxTurningVelocity = config.max_turning_velocity;
     maxLateralVelocity = config.max_lateral_velocity;
@@ -310,10 +305,9 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
     velThreshold = config.velocity_threshold;
     minSideDist = config.min_side_dist;
     sideRecoverWeight = config.side_recover_weight;
-    abortTimeoutSecs = config.abort_timeout;
+    runawayTimeoutSecs = config.runaway_timeout;
     obstacleWaitThreshold = config.obstacle_wait_threshold;
     forwardObstacleThreshold = config.forward_obstacle_threshold;
-    reverseWithoutTurningThreshold = config.reverse_without_turning_threshold;
 
     ROS_WARN("Parameter change detected");
 }
@@ -467,7 +461,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     tf2::Vector3 linear = goalInBase.getOrigin();
     linear.setZ(0);
     double dist = linear.length();
-    bool reverseWithoutTurning = false; //(reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
 
     if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
         ROS_WARN("MoveBasic: Cannot determine robot pose for rotation");
@@ -476,14 +469,6 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     if (dist > linearTolerance) {
         double requestedYaw = atan2(linear.y(), linear.x());
-        if (reverseWithoutTurning) {
-            if (requestedYaw > 0.0) {
-                requestedYaw = -M_PI + requestedYaw;
-            }
-            else {
-                requestedYaw = M_PI - requestedYaw;
-            }
-        }
 
         // Initial rotation
         if (std::abs(requestedYaw) > angularTolerance) {
@@ -507,7 +492,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
                 }
             }
         }
-        
+
     }
 
     actionServer->setSucceeded();
@@ -630,13 +615,9 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
     tf2::Transform goalInBase = poseDriving * goalInDriving;
     tf2::Vector3 remaining = goalInBase.getOrigin();
-    bool forward = (remaining.x() > 0);
     double requestedDistance = remaining.length();
-    double prevDistRemaining = requestedDistance;
     bool pausingForObstacle = false;
-    ros::Time last = ros::Time::now();
     ros::Time obstacleTime;
-    ros::Duration abortTimeout(abortTimeoutSecs);
 
     // For lateral control
     double lateralIntegral = 0.0;
@@ -644,6 +625,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     double prevLateralError = 0.0;
     double lateralDiff = 0.0;
     ros::Time sensorTime;
+    ros::Duration runawayTimeout(runawayTimeoutSecs);
+    ros::Time last = ros::Time::now();
 
     bool success = false;
     bool done = false;
@@ -737,18 +720,20 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             done = true;
         }
 
-        if (distRemaining > prevDistRemaining) {
-            prevDistRemaining = distRemaining;
-            if (ros::Time::now() - last > abortTimeout) {
-                abortGoal("MoveBasic: No progress towards goal for longer than timeout");
-                velocity = 0;
-                success = false;
-                done = true;
+        /* Since we are dealing with imperfect localization we should make
+         * sure we are at least runawayTimeout driving away from the goal*/
+        double angleRemaining = std::atan2(remaining.y(), remaining.x());
+        if (std::cos(angleRemaining) < 0) {
+            if (ros::Time::now() - last > runawayTimeout) {
+                abortGoal("MoveBasic: Moving away from goal");
+                sendCmd(0, 0);
+                return false;
             }
         }
-	else {
-	    last = ros::Time::now();
-	}
+        else {
+            // Only update time when moving towards the goal
+            last = ros::Time::now();
+        }
 
         /* Finish Check */
 
@@ -757,10 +742,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             velocity = 0;
             success = true;
             done = true;
-        }
-
-        if (!forward) {
-            velocity = -velocity;
         }
 
         sendCmd(rotation, velocity);
