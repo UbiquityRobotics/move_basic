@@ -635,7 +635,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     tf2::Transform goalInBase = poseDriving * goalInDriving;
     tf2::Vector3 remaining = goalInBase.getOrigin();
 
-    bool forward = (remaining.x() > 0);
     remaining.setZ(0);
     double requestedDistance = remaining.length();
 
@@ -755,10 +754,6 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
             done = true;
-        }
-
-        if (!forward) {
-            velocity = -velocity;
         }
 
         sendCmd(rotation, velocity);
