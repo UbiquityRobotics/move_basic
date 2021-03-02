@@ -13,9 +13,9 @@ present, it will attemp to stop to avoid a collision with obstacles.
 
 The source code is released under a [BSD 3-Clause license](LICENSE).
 
-**Author: Jim Vaughan <br/>
-Affiliation: [Ubiquity Robotics](www.ubiquityrobotics.org)
-Maintainer: Teodor Janez Podobnik, tp@ubiquityrobotics.org**
+**Author: Jim Vaughan <br/>**
+**Maintainer: Teodor Janez Podobnik, tp@ubiquityrobotics.org <br/>**
+**Affiliation: [Ubiquity Robotics](www.ubiquityrobotics.org)**
 
 The move_basic package has been tested under ROS Kinetic and Melodic on respectively Ubuntu 16.04 and 18.04. This is a research code, expect that it changes often and any fitness for a particular purpose is disclaimed.
 
@@ -28,24 +28,24 @@ see [install ROS](http://wiki.ros.org/ROS/Installation) for more details.
 
 The package can be installed:
 
-     $ sudo apt-get install ros-kinetic-move-basic
+    sudo apt-get install ros-kinetic-move-basic
 
 ### Building from Source
 
 To build from source, clone the latest version from this repository into your catkin workspace and compile the package using
 
-	cd catkin_workspace/src
-        https://github.com/UbiquityRobotics/move_basic.git
-	cd ../
-	rosdep install --from-paths . --ignore-src
-	catkin build
-        source devel/setup.bash
+    cd catkin_workspace/src
+    git clone https://github.com/UbiquityRobotics/move_basic.git
+    cd ../
+    rosdep install --from-paths . --ignore-src
+    catkin build
+    source devel/setup.bash
 
 ## Usage
 
 To run, give the following command:
 
-     $ rosrun move_basic move_basic
+    rosrun move_basic move_basic
 
 ## Nodes
 
@@ -68,7 +68,7 @@ To run, give the following command:
 
 * **`min_turning_velocity`** (double, default: 0.18, min: 0, max: 1.0)
 
-	Minimum turning velocity on spot.
+        Minimum turning velocity on spot.
 
 * **`max_turning_velocity`** (double, default: 1.0, min: 0, max: 4.0)
 
