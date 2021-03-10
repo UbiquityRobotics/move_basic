@@ -33,10 +33,8 @@
 #include <sensor_msgs/Range.h>
 
 ObstaclePoints::ObstaclePoints(ros::NodeHandle& nh, tf2_ros::Buffer& tf_buffer) : tf_buffer(tf_buffer) {
-    sonar_sub = nh.subscribe("/sonars", 1,
-        &ObstaclePoints::range_callback, this);
-    scan_sub = nh.subscribe("/scan", 1,
-        &ObstaclePoints::scan_callback, this);
+    sonar_sub = nh.subscribe("/sonars", 1, &ObstaclePoints::range_callback, this);
+    scan_sub = nh.subscribe("/scan", 1, &ObstaclePoints::scan_callback, this);
     
     nh.param<std::string>("base_frame", baseFrame, "base_link");
 }
@@ -51,7 +49,7 @@ void ObstaclePoints::range_callback(const sensor_msgs::Range::ConstPtr &msg) {
     std::map<std::string,RangeSensor>::iterator it = sensors.find(frame);
     if (it == sensors.end()) {
         try {
-	    ROS_INFO("lookup %s %s", baseFrame.c_str(), frame.c_str());
+        ROS_INFO("lookup %s %s", baseFrame.c_str(), frame.c_str());
             geometry_msgs::TransformStamped sensor_to_base_tf =
                 tf_buffer.lookupTransform(baseFrame, frame, ros::Time(0));
 
@@ -167,24 +165,24 @@ std::vector<tf2::Vector3> ObstaclePoints::get_points(ros::Duration max_age) {
     const std::lock_guard<std::mutex> lock(points_mutex);
     ros::Duration lidar_age = now - lidar_stamp;
     if (lidar_age < max_age) {
-	for (const auto& p : lidar_points) {
-	    float sin_theta = std::sin(p.theta);
-	    float cos_theta = std::cos(p.theta);
+    for (const auto& p : lidar_points) {
+        float sin_theta = std::sin(p.theta);
+        float cos_theta = std::cos(p.theta);
 
-	    float x = lidar_origin.x() + p.radius * (lidar_normal.x() * cos_theta -
-		 lidar_normal.y() * sin_theta);
+        float x = lidar_origin.x() + p.radius * (lidar_normal.x() * cos_theta -
+         lidar_normal.y() * sin_theta);
 
-	    float y = lidar_origin.y() + p.radius * (lidar_normal.y() * cos_theta +
-		 lidar_normal.x() * sin_theta);
+        float y = lidar_origin.y() + p.radius * (lidar_normal.y() * cos_theta +
+         lidar_normal.x() * sin_theta);
 
-	    points.push_back(tf2::Vector3(x, y, 0));
-	}
+        points.push_back(tf2::Vector3(x, y, 0));
+    }
     }
 
     for (const auto& kv : sensors) {
         const RangeSensor& sensor = kv.second;
 
-	ros::Duration age = now - sensor.stamp;
+    ros::Duration age = now - sensor.stamp;
         if (age < max_age) {
            points.push_back(sensor.left_vertex);
            points.push_back(sensor.right_vertex);
@@ -204,10 +202,10 @@ std::vector<ObstaclePoints::Line> ObstaclePoints::get_lines(ros::Duration max_ag
     std::vector<ObstaclePoints::Line> lines;
     for (const auto& kv : sensors) {
         const RangeSensor& sensor = kv.second;
-	ros::Duration age = now - sensor.stamp;
-	if (age < max_age) {
-	    lines.emplace_back(sensor.left_vertex, sensor.right_vertex);
-	}
+        ros::Duration age = now - sensor.stamp;
+        if (age < max_age) {
+            lines.emplace_back(sensor.left_vertex, sensor.right_vertex);
+        }
     }
 
     return lines;

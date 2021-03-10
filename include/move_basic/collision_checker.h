@@ -58,6 +58,7 @@ class CollisionChecker
 
    float max_age;
    float no_obstacle_dist;
+   float no_obstacle_dist_forward;
    std::mutex obstacle_mutex;
 
    ObstaclePoints& ob_points;
