@@ -14,19 +14,36 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
   move_base_msgs
   nav_core
+  dynamic_reconfigure
+  message_generation
+  message_runtime
 )
 
-# Generate messages in the 'msg' folder
-add_message_files(
-  FILES
-  FollowMode.msg
-)
-generate_messages(
-  DEPENDENCIES 
-  std_msgs 
+generate_dynamic_reconfigure_options(
+  cfg/Movebasic.cfg
 )
 
-catkin_package(INCLUDE_DIRS DEPENDS)
+#generate_messages(
+#  DEPENDENCIES
+#  std_msgs
+#)
+
+catkin_package(
+  INCLUDE_DIRS
+  DEPENDS
+  CATKIN_DEPENDS
+  dynamic_reconfigure
+  roscpp
+  sensor_msgs
+  actionlib
+  std_msgs
+  move_base_msgs
+  geometry_msgs
+  visualization_msgs
+  actionlib_msgs
+  std_msgs
+  rostest
+)
 
 ###########
 ## Build ##
@@ -72,10 +89,10 @@ if(CATKIN_ENABLE_TESTING)
                 src/obstacle_points.cpp
                 test/test_obstacle_points.cpp)
         target_link_libraries(obstacle_points_test ${catkin_LIBRARIES})
-	add_rostest_gtest(goal_queueing_test test/goal_queueing.test 
+	add_rostest_gtest(goal_queueing_test test/goal_queueing.test
 #		src/move_basic.cpp
 		test/test_goal_queueing.cpp)
-	target_link_libraries(goal_queueing_test ${catkin_LIBRARIES})	
+	target_link_libraries(goal_queueing_test ${catkin_LIBRARIES})
 endif()
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-9, Ubiquity Robotics
+ * Copyright (c) 2017-21, Ubiquity Robotics
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,38 +35,33 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/Vector3.h>
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
-#include <move_basic/FollowMode.h>
-
-#include <actionlib/server/simple_action_server.h>
+#include <std_msgs/Bool.h>
 #include <move_base_msgs/MoveBaseAction.h>
 
+#include <actionlib/server/simple_action_server.h>
+#include <dynamic_reconfigure/server.h>
 #include "move_basic/collision_checker.h"
 #include "move_basic/queued_action_server.h"
+#include <move_basic/MovebasicConfig.h>
 
 #include <string>
 
 typedef actionlib::QueuedActionServer<move_base_msgs::MoveBaseAction> MoveBaseActionServer;
 
-enum {
-    DRIVE_STRAIGHT,
-    FOLLOW_LEFT,
-    FOLLOW_RIGHT
-};
-
 class MoveBasic {
   private:
     ros::Subscriber goalSub;
+    ros::Subscriber stopSub;
 
     ros::Publisher goalPub;
     ros::Publisher cmdPub;
     ros::Publisher pathPub;
-    ros::Publisher obstacle_dist_pub;
+    ros::Publisher obstacleDistPub;
     ros::Publisher errorPub;
 
     std::unique_ptr<MoveBaseActionServer> actionServer;
@@ -76,28 +71,33 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
-    double maxAngularVelocity;
-    double minAngularVelocity;
-    double angularAcceleration;
+    double minTurningVelocity;
+    double maxTurningVelocity;
+    double turningAcceleration;
     double angularTolerance;
+    double maxLateralVelocity;
 
-    double minLinearVelocity;
     double maxLinearVelocity;
+    double minLinearVelocity;
     double linearAcceleration;
     double linearTolerance;
 
-    // PID parameters for controlling lateral error
     double lateralKp;
     double lateralKi;
     double lateralKd;
-    double lateralMaxRotation;
 
-    int rotationAttempts;
+    double obstacleWaitThreshold;
+    double forwardObstacleThreshold;
+    double minSideDist;
     double localizationLatency;
+    double runawayTimeoutSecs;
+    bool stop;
 
-    double robotWidth;
-    double frontToLidar;
-    double obstacleWaitLimit;
+    float forwardObstacleDist;
+    float leftObstacleDist;
+    float rightObstacleDist;
+    tf2::Vector3 forwardLeft;
+    tf2::Vector3 forwardRight;
 
     std::string preferredPlanningFrame;
     std::string alternatePlanningFrame;
@@ -105,18 +105,10 @@ class MoveBasic {
     std::string alternateDrivingFrame;
     std::string baseFrame;
 
-    double minSideDist;
-    double maxLateralDev;
-    double maxAngularDev;
-    double sideRecoverWeight;
+    dynamic_reconfigure::Server<move_basic::MovebasicConfig> dr_srv;
 
-    float forwardObstacleDist;
-    float leftObstacleDist;
-    float rightObstacleDist;
-    tf2::Vector3 forwardLeft;
-    tf2::Vector3 forwardRight;
-    double reverseWithoutTurningThreshold;
-
+    void dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t);
+    void stopCallback(const std_msgs::Bool::ConstPtr& msg);
     void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void executeAction(const move_base_msgs::MoveBaseGoalConstPtr& goal);
     void drawLine(double x0, double y0, double x1, double y1);
@@ -134,7 +126,6 @@ class MoveBasic {
     void run();
 
     bool moveLinear(tf2::Transform& goalInDriving,
-                    const std::string& planningFrame,
                     const std::string& drivingFrame);
     bool rotate(double requestedYaw,
                 const std::string& drivingFrame);
@@ -150,21 +141,12 @@ static double rad2deg(double rad)
     return rad * 180.0 / M_PI;
 }
 
-
-// Degrees to radians
-
-static double deg2rad(double deg)
-{
-    return deg / 180.0 * M_PI;
-}
-
 // Get the sign of a number
 
 static int sign(double n)
 {
     return (n <0 ? -1 : 1);
 }
-
 
 // Adjust angle to be between -PI and PI
 
@@ -199,47 +181,38 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
 {
     ros::NodeHandle nh("~");
 
-    nh.param<double>("min_angular_velocity", minAngularVelocity, 0.05);
-    nh.param<double>("max_angular_velocity", maxAngularVelocity, 1.0);
-    nh.param<double>("angular_acceleration", angularAcceleration, 0.3);
-    nh.param<double>("angular_tolerance", angularTolerance, 0.01);
-
-    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
+    // Velocity parameters
+    nh.param<double>("min_turning_velocity", minTurningVelocity, 0.18);
+    nh.param<double>("max_turning_velocity", maxTurningVelocity, 1.0);
+    nh.param<double>("max_lateral_velocity", maxLateralVelocity, 0.5);
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
-    nh.param<double>("linear_acceleration", linearAcceleration, 0.25);
-    nh.param<double>("linear_tolerance", linearTolerance, 0.03);
+    nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
+    nh.param<double>("linear_acceleration", linearAcceleration, 0.1);
+    nh.param<double>("turning_acceleration", turningAcceleration, 0.2);
 
-    // Parameters for turn PID
-    nh.param<double>("lateral_kp", lateralKp, 10.0);
+    // Within tolerance, goal is successfully reached
+    nh.param<double>("angular_tolerance", angularTolerance, 0.05);
+    nh.param<double>("linear_tolerance", linearTolerance, 0.05);
+
+    // PID parameters for lateral control
+    nh.param<double>("lateral_kp", lateralKp, 0.0);
     nh.param<double>("lateral_ki", lateralKi, 0.0);
-    nh.param<double>("lateral_kd", lateralKd, 0.0);
-
-    // Minimum distance to maintain at each side
-    nh.param<double>("min_side_dist", minSideDist, 0.3);
-
-    // Maximum deviation from linear path before aborting
-    nh.param<double>("max_lateral_deviation", maxLateralDev, 4.0);
-
-    // Maximum allowed deviation from straight path
-    nh.param<double>("max_angular_deviation", maxAngularDev, deg2rad(20.0));
-
-    // Maximum angular velocity during linear portion
-    nh.param<double>("max_lateral_rotation", lateralMaxRotation, 0.5);
-
-    // Weighting of turning to recover from avoiding side obstacles
-    nh.param<double>("side_recover_weight", sideRecoverWeight, 0.3);
+    nh.param<double>("lateral_kd", lateralKd, 3.0);
 
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
-    nh.param<int>("rotation_attempts", rotationAttempts, 1);
+    // how long robot can be driving away from the goal
+    nh.param<double>("runaway_timeout", runawayTimeoutSecs, 1.0);
 
     // how long to wait for an obstacle to disappear
-    nh.param<double>("obstacle_wait_limit", obstacleWaitLimit, 10.0);
+    nh.param<double>("obstacle_wait_threshold", obstacleWaitThreshold, 60.0);
 
-    // Reverse distances for which rotation won't be performed
-    nh.param<double>("reverse_without_turning_threshold",
-                      reverseWithoutTurningThreshold, 0.5);
+    // Minimum distance to maintain in front
+    nh.param<double>("forward_obstacle_threshold", forwardObstacleThreshold, 0.5);
+
+    // Minimum distance to maintain at each side
+    nh.param<double>("min_side_dist", minSideDist, 0.3);
 
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
@@ -251,10 +224,16 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
                           alternateDrivingFrame, "odom");
     nh.param<std::string>("base_frame", baseFrame, "base_footprint");
 
+    stop = false;
+
+    dynamic_reconfigure::Server<move_basic::MovebasicConfig>::CallbackType f;
+    f = boost::bind(&MoveBasic::dynamicReconfigCallback, this, _1, _2);
+    dr_srv.setCallback(f);
+
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
 
-    obstacle_dist_pub =
+    obstacleDistPub =
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/obstacle_distance", 1));
     errorPub =
         ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
@@ -262,9 +241,12 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     goalSub = nh.subscribe("/move_base_simple/goal", 1,
                             &MoveBasic::goalCallback, this);
 
+    stopSub = nh.subscribe("/move_base/stop", 1,
+                            &MoveBasic::stopCallback, this);
+
     ros::NodeHandle actionNh("");
 
-    actionServer.reset(new MoveBaseActionServer(actionNh, "move_base", 
+    actionServer.reset(new MoveBaseActionServer(actionNh, "move_base",
 	boost::bind(&MoveBasic::executeAction, this, _1)));
 
     actionServer->start();
@@ -307,18 +289,53 @@ bool MoveBasic::transformPose(const std::string& from, const std::string& to,
     return true;
 }
 
+// Dynamic reconfigure
 
+void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uint32_t){
+    minTurningVelocity = config.min_turning_velocity;
+    maxTurningVelocity = config.max_turning_velocity;
+    maxLateralVelocity = config.max_lateral_velocity;
+    turningAcceleration = config.turning_acceleration;
+    maxLinearVelocity = config.max_linear_velocity;
+    minLinearVelocity = config.min_linear_velocity;
+    linearAcceleration = config.linear_acceleration;
+
+    angularTolerance = config.angular_tolerance;
+    linearTolerance = config.linear_tolerance;
+
+    lateralKp = config.lateral_kp;
+    lateralKi = config.lateral_ki;
+    lateralKd = config.lateral_kd;
+
+    localizationLatency = config.localization_latency;
+    runawayTimeoutSecs = config.runaway_timeout;
+
+    minSideDist = config.min_side_dist;
+    obstacleWaitThreshold = config.obstacle_wait_threshold;
+    forwardObstacleThreshold = config.forward_obstacle_threshold;
+
+    ROS_WARN("Parameter change detected");
+}
+
+// Stop robot in place and save last state
+
+void MoveBasic::stopCallback(const std_msgs::Bool::ConstPtr& msg)
+{
+    stop = msg->data;
+    if (stop) ROS_WARN("MoveBasic: Robot is forced to stop!");
+}
 
 // Called when a simple goal message is received
 
 void MoveBasic::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
     ROS_INFO("MoveBasic: Received simple goal");
-    // send the goal to the action server
+
     move_base_msgs::MoveBaseActionGoal actionGoal;
     actionGoal.header.stamp = ros::Time::now();
     actionGoal.goal.target_pose = *msg;
 
+    // Send the goal to the action server
     goalPub.publish(actionGoal);
 }
 
@@ -341,9 +358,8 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
       and then rotating for the final orientation.
 
       It is assumed that we are dealing with imperfect localization data:
-         map->base_link is accurate but may be delayed and is at a slow rate
-         odom->base_link is frequent, but drifts, particularly after rotating
-
+      map->base_link is accurate but may be delayed and is at a slow rate
+      odom->base_link is frequent, but drifts, particularly after rotating
       To counter these issues, we plan in the map frame, and wait localizationLatency
       after each step, and execute in the odom frame.
     */
@@ -361,18 +377,18 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
 
     ROS_INFO("MoveBasic: Received goal %f %f %f %s", x, y, rad2deg(yaw), frameId.c_str());
 
+    bool do_final_rotation = true;
     if (std::isnan(yaw)) {
-        abortGoal("MoveBasic: Aborting goal because an invalid orientation was specified");
-        return;
+        ROS_WARN("MoveBasic: Received a goal with invalid orientation, will go to it but not do final turn");
+        do_final_rotation = false;
     }
-
-    std::string planningFrame;
-    double goalYaw;
 
     // The pose of the robot planning frame MUST be known initially, and may or may not
     // be known after that.
     // The pose of the robot in the driving frame MUST be known at all times.
     // An empty planning frame means to use what ever frame the goal is specified in.
+    double goalYaw;
+    std::string planningFrame;
     if (preferredPlanningFrame == "") {
        planningFrame = frameId;
        goalInPlanning = goal;
@@ -396,7 +412,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     ROS_INFO("MoveBasic: Goal in %s  %f %f %f", planningFrame.c_str(),
              x, y, rad2deg(goalYaw));
 
-    // publish our planned path
+    // Publish our planned path
     nav_msgs::Path path;
     geometry_msgs::PoseStamped p0, p1;
     path.header.frame_id = frameId;
@@ -454,99 +470,59 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     tf2::Vector3 linear = goalInBase.getOrigin();
     linear.setZ(0);
     double dist = linear.length();
-    bool reverseWithoutTurning =
-        (reverseWithoutTurningThreshold > dist && linear.x() < 0.0);
 
-    // Initial rotation to face goal
-    for (int i=0; i<rotationAttempts; i++) {
-        tf2::Transform goalInBase;
-        if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
-            ROS_WARN("MoveBasic: Cannot determine robot pose for rotation");
-            return;
-        }
+    if (!transformPose(frameId, baseFrame, goal, goalInBase)) {
+        ROS_WARN("MoveBasic: Cannot determine robot pose for rotation");
+        return;
+    }
 
-        if (dist > linearTolerance) {
-            double requestedYaw = atan2(linear.y(), linear.x());
-            if (reverseWithoutTurning) {
-                if (requestedYaw > 0.0) {
-                    requestedYaw = -M_PI + requestedYaw;
-                }
-                else {
-                    requestedYaw = M_PI - requestedYaw;
-                }
-            }
+    if (dist > linearTolerance) {
 
-            if (std::abs(requestedYaw) < angularTolerance) {
-                break;
-            }
+        // Initial rotation to face the goal
+        double requestedYaw = atan2(linear.y(), linear.x());
+        if (std::abs(requestedYaw) > angularTolerance) {
             if (!rotate(requestedYaw, drivingFrame)) {
                 return;
             }
+        }
+        sleep(localizationLatency);
+
+        // Do linear portion of the goal
+        if (!moveLinear(goalInDriving, drivingFrame)) {
+            return;
+        }
+        sleep(localizationLatency);
+
+        // Final rotation as specified in goal
+        if (do_final_rotation) {
+            double finalYaw = goalYaw - (yaw + requestedYaw);
+            if (std::abs(finalYaw) > angularTolerance) {
+                if (!rotate(finalYaw, drivingFrame)) {
+                    return;
+                }
+            }
+
             sleep(localizationLatency);
         }
     }
 
-    // Do linear portion of goal
-    ROS_INFO("MoveBasic: Requested distance %f with linear tolerance of %f", dist,linearTolerance);
-
-    if (std::abs(dist) > linearTolerance) {
-        if (reverseWithoutTurning) {
-            dist = - dist;
-        }
-        if (!moveLinear(goalInDriving, planningFrame, drivingFrame)) {
-            return;
-        }
-        {
-            tf2::Transform poseFrameIdFinal;
-            if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
-                 ROS_WARN("MoveBasic: Cannot determine robot pose in goal frame");
-            }
-            tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
-                                         poseFrameId.getOrigin();
-            ROS_DEBUG("MoveBasic: Travelled %f %f\n", distTravelled.x(), distTravelled.y());
-        }
-
-        sleep(localizationLatency);
-    }
-
-    // Final rotation as specified in goal
-    tf2::Transform finalPose;
-    if (!getTransform(baseFrame, drivingFrame, finalPose)) {
-         abortGoal("MoveBasic: Cannot determine robot pose for final rotation");
-         return;
-    }
-
-    getPose(finalPose, x, y, yaw);
-    rotate(goalYaw - yaw, drivingFrame);
-
-/*
-    sleep(10);
-    // Final sanity check
-    {
-        tf2::Transform poseFrameIdFinal;
-        if (!getTransform(baseFrame, frameId, poseFrameIdFinal)) {
-             ROS_WARN("Cannot determine robot pose in goal frame");
-        }
-        tf2::Vector3 distTravelled = poseFrameIdFinal.getOrigin() -
-                                     poseFrameId.getOrigin();
-        ROS_DEBUG("Travelled %f %f\n", distTravelled.x(), distTravelled.y());
-    }
-*/
-
     actionServer->setSucceeded();
 }
-
 
 
 // Send a motion command
 
 void MoveBasic::sendCmd(double angular, double linear)
 {
-   geometry_msgs::Twist msg;
-   msg.angular.z = angular;
-   msg.linear.x = linear;
+    if (stop) {
+        angular = 0;
+        linear = 0;
+    }
+    geometry_msgs::Twist msg;
+    msg.angular.z = angular;
+    msg.linear.x = linear;
 
-   cmdPub.publish(msg);
+    cmdPub.publish(msg);
 }
 
 
@@ -555,7 +531,6 @@ void MoveBasic::sendCmd(double angular, double linear)
 void MoveBasic::run()
 {
     ros::Rate r(20);
-    std_msgs::Float32 msg;
 
     while (ros::ok()) {
         ros::spinOnce();
@@ -569,8 +544,7 @@ void MoveBasic::run()
         msg.x = forwardObstacleDist;
         msg.y = leftObstacleDist;
         msg.z = rightObstacleDist;
-        obstacle_dist_pub.publish(msg);
-
+        obstacleDistPub.publish(msg);
         r.sleep();
     }
 }
@@ -580,8 +554,6 @@ void MoveBasic::run()
 
 bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 {
-    ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(yaw));
-
     tf2::Transform poseDriving;
     if (!getTransform(baseFrame, drivingFrame, poseDriving)) {
          abortGoal("MoveBasic: Cannot determine robot pose for rotation");
@@ -592,12 +564,13 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
     getPose(poseDriving, x, y, currentYaw);
     double requestedYaw = currentYaw + yaw;
     normalizeAngle(requestedYaw);
-
-    bool done = false;
-    ros::Rate r(50);
+    ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(requestedYaw));
 
     int oscillations = 0;
     double prevAngleRemaining = 0;
+
+    bool done = false;
+    ros::Rate r(50);
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -616,19 +589,9 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
-        double speed = std::max(minAngularVelocity,
-            std::min(maxAngularVelocity,
-              std::sqrt(2.0 * angularAcceleration *
-                (remaining - angularTolerance))));
-
-        double velocity = 0;
-
-        if (angleRemaining < 0.0) {
-            velocity = -speed;
-        }
-        else {
-            velocity = speed;
-        }
+        double velocity = std::max(minTurningVelocity,
+            std::min(remaining, std::min(maxTurningVelocity,
+                    std::sqrt(2.0 * turningAcceleration *remaining))));
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
             oscillations++;
@@ -637,18 +600,24 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping rotation due to preempt");
-            done = true;
-            velocity = 0;
+            sendCmd(0, 0);
+            actionServer->setPreempted();
+            return false;
         }
-
-        //ROS_INFO("%f %f %f", rad2deg(angleRemaining), angleRemaining, velocity);
 
         if (std::abs(angleRemaining) < angularTolerance || oscillations > 2) {
+            ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
             velocity = 0;
             done = true;
-            ROS_INFO("MoveBasic: Done rotation, error %f degrees", rad2deg(angleRemaining));
         }
+
+        bool counterwise = (angleRemaining < 0.0);
+        if (counterwise) {
+            velocity = -velocity;
+        }
+
         sendCmd(velocity, 0);
+        ROS_DEBUG("Angle remaining: %f, Angular velocity: %f", rad2deg(angleRemaining), velocity);
     }
     return done;
 }
@@ -656,132 +625,60 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 // Move forward specified distance
 
 bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
-                           const std::string& planningFrame,
                            const std::string& drivingFrame)
 {
-    bool done = false;
-    ros::Rate r(50);
-
-    bool waitingForObstacle = false;
-    int  waitingLoops = 0;
-    double forwardObstacleThreshold = 1.5;  // if distance <  velocity times this we stop
-    ros::Time obstacleTime;
-
-    tf2::Transform poseDrivingInitial;
-    if (!getTransform(baseFrame, drivingFrame, poseDrivingInitial)) {
-         abortGoal("MoveBasic: Cannot determine robot pose for linear");
-         return false;
-    }
-
-    tf2::Vector3 linear = (poseDrivingInitial.getOrigin() -
-                           goalInDriving.getOrigin());
-    linear.setZ(0);
-    double requestedDistance = linear.length();
-
     tf2::Transform poseDriving;
     if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
          abortGoal("MoveBasic: Cannot determine robot pose for linear");
          return false;
     }
-
     tf2::Transform goalInBase = poseDriving * goalInDriving;
     tf2::Vector3 remaining = goalInBase.getOrigin();
-    bool forward = (remaining.x() > 0);
+
+    remaining.setZ(0);
+    double requestedDistance = remaining.length();
+
+    bool pausingForObstacle = false;
+    ros::Time obstacleTime;
+    ros::Duration runawayTimeout(runawayTimeoutSecs);
+    ros::Time last = ros::Time::now();
 
     // For lateral control
     double lateralIntegral = 0.0;
     double lateralError = 0.0;
     double prevLateralError = 0.0;
     double lateralDiff = 0.0;
-    ros::Time sensorTime;
+
+    bool done = false;
+    ros::Rate r(50);
 
     while (!done && ros::ok()) {
         ros::spinOnce();
         r.sleep();
 
-        // Try to update the goal in the driving frame. This might not work,
-        // for example if it was based on a fiducial which was no longer
-        // visible. However, if the goal was based up a fiducial, then it
-        // is likley that the estimate of our position relative to it
-        // will improve as we get closer
-        tf2::Transform T_planning_driving;
-        if (getTransform(planningFrame, drivingFrame, T_planning_driving)) {
-            goalInDriving = T_planning_driving * goalInPlanning;
-            double gx, gy, gyaw;
-            getPose(goalInDriving, gx, gy, gyaw);
-            ROS_DEBUG("Updated goal %f %f %f\n", gx, gy, gyaw);
-        }
-        else {
-            ROS_DEBUG("Could not update goal\n");
-        }
-
         if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
              ROS_WARN("MoveBasic: Cannot determine robot pose for linear");
-             continue;
+             return false;
         }
         goalInBase = poseDriving * goalInDriving;
         remaining = goalInBase.getOrigin();
         double distRemaining = sqrt(remaining.x() * remaining.x() + remaining.y() * remaining.y());
 
-        tf2::Transform initialBaseToCurrent = poseDrivingInitial * poseDriving;
-        double cx, cy, cyaw;
-        getPose(initialBaseToCurrent, cx, cy, cyaw);
-
-        double distTravelled = std::abs(requestedDistance) - std::abs(distRemaining);
-
-        double velMult = 1.0;
-
-        // stick to planned path
-        lateralError = sideRecoverWeight * remaining.y();
-     
-/*
-        Future enhancement: turn to avoid a forward obstacle
-
-        bool canTurn = std::abs(cyaw) <= maxTurn;
-        if (canTurn && forwardObstacleDist < 1.0) {
-            if (leftObstacleDist > rightObstacleDist) {
-               lateralError = lateralMaxRotation;
-            }
-            else {
-               lateralError = -lateralMaxRotation;
-            }
-        }
-*/
-        if (std::abs(remaining.y()) >= maxLateralDev) {
-            abortGoal("MoveBasic: Aborting since max deviation reached");
-            sendCmd(0, 0);
-            return false;
-        }
-
-        // PID loop to control rotation to keep robot on path
+        // PID lateral control to keep robot on path
         double rotation = 0.0;
-
+        lateralError = remaining.y();
         lateralDiff = lateralError - prevLateralError;
         prevLateralError = lateralError;
-
         lateralIntegral += lateralError;
-
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
-
         // Clamp rotation
-        rotation = std::max(-lateralMaxRotation, std::min(lateralMaxRotation,
+        rotation = std::max(-maxLateralVelocity, std::min(maxLateralVelocity,
                                                           rotation));
-
-        // Limit angular deviation from planned path to prevent turning around
-        if (cyaw > maxAngularDev && rotation < 0) {
-            ROS_DEBUG("limit right\n");
-            rotation = 0;
-        }
-        else if (cyaw < -maxAngularDev && rotation > 0) {
-            ROS_DEBUG("limit left\n");
-            rotation = 0;
-        }
-
-        ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f %f\n",
+        ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f \n",
                   forwardObstacleDist, leftObstacleDist, rightObstacleDist,
                   remaining.x(), remaining.y(), lateralError,
-                  rotation, rad2deg(cyaw));
+                  rotation);
 
         // Publish messages for PID tuning
         geometry_msgs::Vector3 pid_debug;
@@ -790,71 +687,79 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         pid_debug.z = rotation;
         errorPub.publish(pid_debug);
 
+        // Collision Avoidance
         double obstacleDist = forwardObstacleDist;
-        if (requestedDistance < 0.0) { // Reverse
-            obstacleDist = collision_checker->obstacle_dist(false,
-                                                            leftObstacleDist,
-                                                            rightObstacleDist,
-                                                            forwardLeft,
-                                                            forwardRight);
-        }
+	if (requestedDistance < 0.0) {
+		obstacleDist = collision_checker->obstacle_dist(false,
+                                                        	leftObstacleDist,
+                                                        	rightObstacleDist,
+                                                        	forwardLeft,
+                                                        	forwardRight);
+	}
 
         double velocity = std::max(minLinearVelocity,
-            std::min(maxLinearVelocity, std::min(
-              std::sqrt(2.0 * linearAcceleration * std::abs(distTravelled)),
-              std::sqrt(0.5 * linearAcceleration *
-                 std::min(obstacleDist, distRemaining)))));
+		std::min(std::min(std::abs(obstacleDist), std::abs(distRemaining)),
+                	std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration *
+								    std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
 
-        // Stop if there is an obstacle in the distance we would hit in given time
-        bool obstacleDetected = obstacleDist <= velocity * forwardObstacleThreshold;
+        bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
         if (obstacleDetected) {
             velocity = 0;
-            if (!waitingForObstacle) {
+            if (!pausingForObstacle) {
                 ROS_INFO("MoveBasic: PAUSING for OBSTACLE");
                 obstacleTime = ros::Time::now();
-                waitingForObstacle = true;
-                waitingLoops = 0;
+                pausingForObstacle = true;
             }
             else {
-                waitingLoops += 1;
-                if ((waitingLoops % 10) == 1) {
-                    ROS_INFO("MoveBasic: Still waiting for obstacle at %f meters!", obstacleDist);
-                }
+                ROS_INFO("MoveBasic: Still waiting for obstacle at %f meters!", obstacleDist);
                 ros::Duration waitTime = ros::Time::now() - obstacleTime;
-                if (waitTime.toSec() > obstacleWaitLimit) {
+                if (waitTime.toSec() > obstacleWaitThreshold) {
                     abortGoal("MoveBasic: Aborting due to obstacle");
-                    sendCmd(0, 0);
                     return false;
                 }
             }
         }
 
-        if (waitingForObstacle && ! obstacleDetected) {
+        if (!obstacleDetected && pausingForObstacle) {
             ROS_INFO("MoveBasic: Resuming after obstacle has gone");
-            waitingForObstacle = false;
-            waitingLoops = 0;
-            // start off again smoothly
-            requestedDistance = distRemaining;
-            distTravelled = 0.0;
+            pausingForObstacle = false;
         }
 
+        // Abort Checks
         if (actionServer->isPreemptRequested()) {
             ROS_INFO("MoveBasic: Stopping move due to preempt");
-            done = true;
-            velocity = 0;
+            actionServer->setPreempted();
+            sendCmd(0, 0);
+            return false;
         }
 
-        if (std::abs(remaining.x()) < linearTolerance) {
+        /* Since we are dealing with imperfect localization we should make
+         * sure we are at least runawayTimeout driving away from the goal*/
+        double angleRemaining = std::atan2(remaining.y(), remaining.x());
+        if (std::cos(angleRemaining) < 0) {
+            if (ros::Time::now() - last > runawayTimeout) {
+                abortGoal("MoveBasic: Moving away from goal");
+                sendCmd(0, 0);
+                return false;
+            }
+        }
+        else {
+            // Only update time when moving towards the goal
+            last = ros::Time::now();
+        }
+
+        /* Finish Check */
+
+        if (distRemaining < linearTolerance) {
+            ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
             done = true;
-            ROS_INFO("MoveBasic: Done linear, error in X %f, Y %f meters. Tol %f ",
-                     remaining.x(), remaining.y(), linearTolerance);
         }
-        if (!forward) {
-            velocity = -velocity;
-        }
-        sendCmd(rotation, velMult * velocity);
+
+        sendCmd(rotation, velocity);
+        ROS_DEBUG("Distance remaining: %f, Linear velocity: %f", distRemaining, velocity);
     }
+
     return done;
 }
 
