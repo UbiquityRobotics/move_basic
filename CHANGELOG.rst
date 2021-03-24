@@ -11,8 +11,8 @@ Changelog for package move_basic
 * Add dynamic reconfigure
 * Contributors: Teodor Janez Podobnik, Rohan Agrawal
 
-Forthcoming
------------
+0.4.1 (2021-03-24)
+------------------
 * Removed backward drive
 * Cosine Runaway safety abort
 * Minimum velocity parameters
