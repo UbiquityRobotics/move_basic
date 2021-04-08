@@ -126,11 +126,11 @@ class MoveBasic {
     void run();
 
     bool moveLinear(tf2::Transform& goalInDriving,
-                    const std::string& drivingFrame);
+                    const std::string& drivingFrame,
+                    tf2::Transform& goalInPlanning,
+                    const std::string& planningFrame);
     bool rotate(double requestedYaw,
                 const std::string& drivingFrame);
-
-    tf2::Transform goalInPlanning;
 };
 
 
@@ -384,11 +384,12 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
 
     // The pose of the robot planning frame MUST be known initially, and may or may not
-    // be known after that.
+    // be known after that (e.g. fiducial marker).
     // The pose of the robot in the driving frame MUST be known at all times.
     // An empty planning frame means to use what ever frame the goal is specified in.
     double goalYaw;
     std::string planningFrame;
+    tf2::Transform goalInPlanning;
     if (preferredPlanningFrame == "") {
        planningFrame = frameId;
        goalInPlanning = goal;
@@ -396,8 +397,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     }
     else if (!transformPose(frameId, preferredPlanningFrame, goal, goalInPlanning)) {
         ROS_WARN("MoveBasic: Will attempt to plan in %s frame", alternatePlanningFrame.c_str());
-        if (!transformPose(frameId, alternatePlanningFrame, goal,
-            goalInPlanning)) {
+        if (!transformPose(frameId, alternatePlanningFrame, goal, goalInPlanning)) {
             abortGoal("MoveBasic: No localization available for planning");
             return;
         }
@@ -441,14 +441,11 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     if (!getTransform(preferredDrivingFrame, baseFrame, currentDrivingBase)) {
          ROS_WARN("MoveBasic: %s not available, attempting to drive using %s frame",
                   preferredDrivingFrame.c_str(), alternateDrivingFrame.c_str());
-         if (!getTransform(alternateDrivingFrame,
-                           baseFrame, currentDrivingBase)) {
+         if (!getTransform(alternateDrivingFrame, baseFrame, currentDrivingBase)) {
              abortGoal("MoveBasic: Cannot determine robot pose in driving frame");
              return;
          }
-         else {
-             drivingFrame = alternateDrivingFrame;
-         }
+         drivingFrame = alternateDrivingFrame;
     }
     else {
       drivingFrame = preferredDrivingFrame;
@@ -488,7 +485,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         sleep(localizationLatency);
 
         // Do linear portion of the goal
-        if (!moveLinear(goalInDriving, drivingFrame)) {
+        if (!moveLinear(goalInDriving, drivingFrame, goalInPlanning, planningFrame)) {
             return;
         }
         sleep(localizationLatency);
@@ -625,7 +622,9 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 // Move forward specified distance
 
 bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
-                           const std::string& drivingFrame)
+                           const std::string& drivingFrame, // Odom or map
+                           tf2::Transform& goalInPlanning,
+                           const std::string& planningFrame) // Fiducial
 {
     tf2::Transform poseDriving;
     if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
@@ -655,6 +654,24 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     while (!done && ros::ok()) {
         ros::spinOnce();
         r.sleep();
+
+        // TODO: TEST
+        // Try to update the goal in the driving frame according to planning frame.
+        // This might not work, for example if it was based on a fiducial
+        // which was no longer visible. However, if the goal was based up a fiducial,
+        // then it is likely that the estimate of our position relative to it
+        // will improve as we get closer.
+        tf2::Transform T_planning_driving;
+        if (getTransform(planningFrame, drivingFrame, T_planning_driving)) {
+            goalInDriving = T_planning_driving * goalInPlanning;
+            double gx, gy, gyaw;
+            getPose(goalInDriving, gx, gy, gyaw);
+            ROS_INFO("Updated goal %f %f %f\n", gx, gy, gyaw);
+        }
+        else {
+            ROS_INFO("Could not update goal\n");
+        }
+        // TODO: TEST
 
         if (!getTransform(drivingFrame, baseFrame, poseDriving)) {
              ROS_WARN("MoveBasic: Cannot determine robot pose for linear");
