@@ -50,6 +50,7 @@ catkin_package(
 ###########
 
 add_definitions(-std=c++11 -Wall -Wextra)
+list(REMOVE_ITEM PCL_LIBRARIES "vtkproj4")
 
 include_directories(${catkin_INCLUDE_DIRS} include)
 
