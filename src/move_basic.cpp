@@ -71,6 +71,8 @@ class MoveBasic {
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener listener;
 
+    double controlLoopRate;
+
     double minTurningVelocity;
     double maxTurningVelocity;
     double turningAcceleration;
@@ -87,7 +89,9 @@ class MoveBasic {
     double lateralKd;
 
     double obstacleWaitThreshold;
-    double forwardObstacleThreshold;
+    double minLookaheadDist;
+    double maxLookaheadDist;
+    double lookaheadTime;
     double minSideDist;
     double localizationLatency;
     double runawayTimeoutSecs;
@@ -188,7 +192,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     nh.param<double>("max_linear_velocity", maxLinearVelocity, 0.5);
     nh.param<double>("min_linear_velocity", minLinearVelocity, 0.1);
     nh.param<double>("linear_acceleration", linearAcceleration, 0.1);
-    nh.param<double>("turning_acceleration", turningAcceleration, 0.2);
+    nh.param<double>("turning_acceleration", turningAcceleration, 1.0);
 
     // Within tolerance, goal is successfully reached
     nh.param<double>("angular_tolerance", angularTolerance, 0.05);
@@ -202,14 +206,19 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // how long to wait after moving to be sure localization is accurate
     nh.param<double>("localization_latency", localizationLatency, 0.5);
 
+    // Maneuvers control loop rate
+    nh.param<double>("control_loop_rate", controlLoopRate, 20);
+
     // how long robot can be driving away from the goal
     nh.param<double>("runaway_timeout", runawayTimeoutSecs, 1.0);
 
     // how long to wait for an obstacle to disappear
     nh.param<double>("obstacle_wait_threshold", obstacleWaitThreshold, 60.0);
 
-    // Minimum distance to maintain in front
-    nh.param<double>("forward_obstacle_threshold", forwardObstacleThreshold, 0.5);
+    // Minimum time duration until collision 
+    nh.param<double>("max_allowed_time_to_collision", lookaheadTime, 2.0);
+    nh.param<double>("minimum_collision_lookahead", minLookaheadDist, 0.5);
+    nh.param<double>("maximum_collision_lookahead", maxLookaheadDist, 2.0);
 
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
@@ -312,7 +321,9 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
 
     minSideDist = config.min_side_dist;
     obstacleWaitThreshold = config.obstacle_wait_threshold;
-    forwardObstacleThreshold = config.forward_obstacle_threshold;
+    lookaheadTime = config.max_allowed_time_to_collision;
+    minLookaheadDist = config.minimum_collision_lookahead;
+    maxLookaheadDist = config.maximum_collision_lookahead;
 
     ROS_WARN("Parameter change detected");
 }
@@ -568,9 +579,11 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
     int oscillations = 0;
     double prevAngleRemaining = 0;
+    double currentAngularVelocity = 0.0;
 
     bool done = false;
-    ros::Rate r(50);
+    ros::Rate r(controlLoopRate);
+    double dt = 1 / controlLoopRate;
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -589,9 +602,12 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
-        double velocity = std::max(minTurningVelocity,
-            std::min(remaining, std::min(maxTurningVelocity,
-                    std::sqrt(2.0 * turningAcceleration *remaining))));
+
+	// Constraint linear velocity according to kinematic capabilities
+	double minFeasibleAngVel = std::abs(currentAngularVelocity) - turningAcceleration * dt;
+	double maxFeasibleAngVel = std::abs(currentAngularVelocity) + turningAcceleration * dt;
+	double clampedVelocity = std::clamp(remaining, minFeasibleAngVel, maxFeasibleAngVel);
+        double velocity = std::clamp(clampedVelocity, minTurningVelocity, maxTurningVelocity); 
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
             oscillations++;
@@ -618,6 +634,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         sendCmd(velocity, 0);
         ROS_DEBUG("Angle remaining: %f, Angular velocity: %f", rad2deg(angleRemaining), velocity);
+	currentAngularVelocity = velocity;
     }
     return done;
 }
@@ -637,6 +654,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
     remaining.setZ(0);
     double requestedDistance = remaining.length();
+    double currentLinearVelocity = 0.0;
 
     bool pausingForObstacle = false;
     ros::Time obstacleTime;
@@ -650,7 +668,8 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
     double lateralDiff = 0.0;
 
     bool done = false;
-    ros::Rate r(50);
+    ros::Rate r(controlLoopRate);
+    double dt = 1 / controlLoopRate;
 
     while (!done && ros::ok()) {
         ros::spinOnce();
@@ -673,8 +692,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         rotation = (lateralKp * lateralError) + (lateralKi * lateralIntegral) +
                    (lateralKd * lateralDiff);
         // Clamp rotation
-        rotation = std::max(-maxLateralVelocity, std::min(maxLateralVelocity,
-                                                          rotation));
+        rotation = std::clamp(rotation, -maxLateralVelocity, maxLateralVelocity);
         ROS_DEBUG("MoveBasic: %f L %f, R %f %f %f %f %f \n",
                   forwardObstacleDist, leftObstacleDist, rightObstacleDist,
                   remaining.x(), remaining.y(), lateralError,
@@ -697,12 +715,20 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                                                         	forwardRight);
 	}
 
-        double velocity = std::max(minLinearVelocity,
-		std::min(std::min(std::abs(obstacleDist), std::abs(distRemaining)),
-                	std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration *
-								    std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
+	// Proportional control according to the proximity of the obstacles 
+	double proportionalVelocity = std::min(std::abs(obstacleDist), std::abs(distRemaining));
 
-        bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
+	// Constraint linear velocity according to kinematic capabilities
+	double minFeasibleLinVel = currentLinearVelocity - linearAcceleration * dt;
+	double maxFeasibleLinVel = currentLinearVelocity + linearAcceleration * dt;
+	double clampedVelocity = std::clamp(proportionalVelocity, minFeasibleLinVel, maxFeasibleLinVel);
+	double velocity = std::clamp(clampedVelocity, minLinearVelocity, maxLinearVelocity);
+
+	// velocity * time = pose of the robot in future 
+	// This ensures safety independent from threshold distance rather 
+	// how much time before the collision, which is dependendant also on the velocity of the robot
+	double lookaheadDist = std::clamp(velocity * lookaheadTime, minLookaheadDist, maxLookaheadDist);
+        bool obstacleDetected = (obstacleDist < lookaheadDist);
         if (obstacleDetected) {
             velocity = 0;
             if (!pausingForObstacle) {
@@ -758,6 +784,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         sendCmd(rotation, velocity);
         ROS_DEBUG("Distance remaining: %f, Linear velocity: %f", distRemaining, velocity);
+	currentLinearVelocity = velocity;
     }
 
     return done;
