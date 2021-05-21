@@ -30,5 +30,6 @@
   <depend>message_generation</depend>
   <depend>message_runtime</depend>
   <depend>rostest</depend>
+  <depend>proj</depend>
 
 </package>
