@@ -2,8 +2,8 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.4.2 (2021-05-21)
+------------------
 * Fixes dependencies 
 * Contributors: Rohan Agrawal, Teo Podobnik
 
