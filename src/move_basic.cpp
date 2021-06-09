@@ -492,18 +492,19 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
             return;
         }
         sleep(localizationLatency);
+    }
 
-        // Final rotation as specified in goal
-        if (do_final_rotation) {
-            double finalYaw = goalYaw - (yaw + requestedYaw);
-            if (std::abs(finalYaw) > angularTolerance) {
-                if (!rotate(finalYaw, drivingFrame)) {
-                    return;
-                }
-            }
-
-            sleep(localizationLatency);
+    // Final rotation as specified in goal
+    if (do_final_rotation) {
+        double requestedYaw = atan2(linear.y(), linear.x());
+        double finalYaw = goalYaw - (yaw + requestedYaw);
+        if (std::abs(finalYaw) > angularTolerance) {
+	    if (!rotate(finalYaw, drivingFrame)) {
+	        return;
+	    }
         }
+
+        sleep(localizationLatency);
     }
 
     actionServer->setSucceeded();
