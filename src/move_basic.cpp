@@ -754,11 +754,11 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         /* Since we are dealing with imperfect localization we should make
          * sure we are at least runawayTimeout driving away from the goal*/
         double angleRemaining = std::atan2(remaining.y(), remaining.x());
-        if (std::cos(angleRemaining) < 0) {
+        if (std::cos(angleRemaining) < 0) { // 0
             if (ros::Time::now() - last > runawayTimeout) {
-                abortGoal("MoveBasic: Moving away from goal");
-                sendCmd(0, 0);
-                return false;
+                ROS_INFO("MoveBasic: Moving away from goal");
+                sendCmd(rotation, 0);
+                return true;
             }
         }
         else {
