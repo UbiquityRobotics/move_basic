@@ -2,6 +2,12 @@
 Changelog for package move_basic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.4.3 (2021-10-28)
+------------------
+* Continious directional correction while driving
+* Linear and rotational part run as separate maneuvers
+* Contributors: MoffKalast, Teo Podobnik
+
 0.4.2 (2021-05-21)
 ------------------
 * Fixes dependencies 
