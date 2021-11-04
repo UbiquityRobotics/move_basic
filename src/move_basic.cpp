@@ -504,6 +504,7 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         sleep(localizationLatency);
     }
 
+    ROS_INFO("Goal reached!");
     actionServer->setSucceeded();
 }
 
