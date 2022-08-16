@@ -92,6 +92,7 @@ class MoveBasic {
     double localizationLatency;
     double runawayTimeoutSecs;
     bool stop;
+    bool drive_in_reverse;
 
     float forwardObstacleDist;
     float leftObstacleDist;
@@ -214,6 +215,9 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     // Minimum distance to maintain at each side
     nh.param<double>("min_side_dist", minSideDist, 0.3);
 
+    // Are we driving in reverse?
+    nh.param<bool>("drive_in_reverse", drive_in_reverse, false);
+
     nh.param<std::string>("preferred_planning_frame",
                           preferredPlanningFrame, "");
     nh.param<std::string>("alternate_planning_frame",
@@ -247,7 +251,7 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     ros::NodeHandle actionNh("");
 
     actionServer.reset(new MoveBaseActionServer(actionNh, "move_base",
-	boost::bind(&MoveBasic::executeAction, this, _1)));
+    boost::bind(&MoveBasic::executeAction, this, _1)));
 
     actionServer->start();
     goalPub = actionNh.advertise<move_base_msgs::MoveBaseActionGoal>(
@@ -309,6 +313,7 @@ void MoveBasic::dynamicReconfigCallback(move_basic::MovebasicConfig& config, uin
 
     localizationLatency = config.localization_latency;
     runawayTimeoutSecs = config.runaway_timeout;
+    drive_in_reverse = config.drive_in_reverse;
 
     minSideDist = config.min_side_dist;
     obstacleWaitThreshold = config.obstacle_wait_threshold;
@@ -519,6 +524,7 @@ void MoveBasic::sendCmd(double angular, double linear)
         linear = 0;
     }
     geometry_msgs::Twist msg;
+
     msg.angular.z = angular;
     msg.linear.x = linear;
 
@@ -563,6 +569,11 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
     double x, y, currentYaw;
     getPose(poseDriving, x, y, currentYaw);
     double requestedYaw = currentYaw + yaw;
+
+    if(drive_in_reverse){
+        requestedYaw += 3.14159265;
+    }
+
     normalizeAngle(requestedYaw);
     ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(requestedYaw));
 
@@ -589,9 +600,16 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
 
         double obstacle = collision_checker->obstacle_angle(angleRemaining > 0);
         double remaining = std::min(std::abs(angleRemaining), std::abs(obstacle));
-        double velocity = std::max(minTurningVelocity,
-            std::min(remaining, std::min(maxTurningVelocity,
-                    std::sqrt(2.0 * turningAcceleration *remaining))));
+        double velocity = std::max(
+            minTurningVelocity, 
+            std::min(
+                remaining, 
+                std::min(
+                    maxTurningVelocity, 
+                    std::sqrt(2.0 * turningAcceleration *remaining)
+                )
+            )
+        );
 
         if (sign(prevAngleRemaining) != sign(angleRemaining)) {
             oscillations++;
@@ -689,18 +707,20 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         // Collision Avoidance
         double obstacleDist = forwardObstacleDist;
-	if (requestedDistance < 0.0) {
-		obstacleDist = collision_checker->obstacle_dist(false,
-                                                        	leftObstacleDist,
-                                                        	rightObstacleDist,
-                                                        	forwardLeft,
-                                                        	forwardRight);
-	}
+        if (requestedDistance < 0.0) {
+            obstacleDist = collision_checker->obstacle_dist(
+                false,
+                leftObstacleDist,
+                rightObstacleDist,
+                forwardLeft,
+                forwardRight
+            );
+        }
 
         double velocity = std::max(minLinearVelocity,
-		std::min(std::min(std::abs(obstacleDist), std::abs(distRemaining)),
-                	std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration *
-								    std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
+        std::min(std::min(std::abs(obstacleDist), std::abs(distRemaining)),
+                    std::min(maxLinearVelocity, std::sqrt(2.0 * linearAcceleration *
+                                    std::min(std::abs(obstacleDist), std::abs(distRemaining))))));
 
         bool obstacleDetected = (obstacleDist < forwardObstacleThreshold);
         if (obstacleDetected) {
@@ -735,7 +755,15 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
 
         /* Since we are dealing with imperfect localization we should make
          * sure we are at least runawayTimeout driving away from the goal*/
-        double angleRemaining = std::atan2(remaining.y(), remaining.x());
+        double angleRemaining;
+        if(drive_in_reverse){
+            angleRemaining = std::atan2(-remaining.y(), -remaining.x());
+        }
+        else{
+            angleRemaining = std::atan2(remaining.y(), remaining.x())
+        }
+
+        normalizeAngle(angleRemaining);
         if (std::cos(angleRemaining) < 0) {
             if (ros::Time::now() - last > runawayTimeout) {
                 abortGoal("MoveBasic: Moving away from goal");
@@ -754,6 +782,10 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             ROS_INFO("MoveBasic: Done linear, error: x: %f meters, y: %f meters", remaining.x(), remaining.y());
             velocity = 0;
             done = true;
+        }
+
+        if(drive_in_reverse){
+            velocity = -velocity;
         }
 
         sendCmd(rotation, velocity);
