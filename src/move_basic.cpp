@@ -484,7 +484,14 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
     if (dist > linearTolerance) {
 
         // Initial rotation to face the goal
-        double requestedYaw = atan2(linear.y(), linear.x());
+        double requestedYaw;
+        if(drive_in_reverse){
+            angleRemaining = atan2(-linear.y(), -linear.x());
+        }
+        else{
+            angleRemaining = atan2(linear.y(), linear.x());
+        }
+
         if (std::abs(requestedYaw) > angularTolerance) {
             if (!rotate(requestedYaw, drivingFrame)) {
                 return;
@@ -541,7 +548,7 @@ void MoveBasic::run()
     while (ros::ok()) {
         ros::spinOnce();
         collision_checker->min_side_dist = minSideDist;
-        forwardObstacleDist = collision_checker->obstacle_dist(true,
+        forwardObstacleDist = collision_checker->obstacle_dist(!drive_in_reverse,
                                                                leftObstacleDist,
                                                                rightObstacleDist,
                                                                forwardLeft,
@@ -571,7 +578,7 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
     double requestedYaw = currentYaw + yaw;
 
     if(drive_in_reverse){
-        requestedYaw += 3.14159265;
+        //requestedYaw += 3.14159265;
     }
 
     normalizeAngle(requestedYaw);
@@ -709,7 +716,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
         double obstacleDist = forwardObstacleDist;
         if (requestedDistance < 0.0) {
             obstacleDist = collision_checker->obstacle_dist(
-                false,
+                drive_in_reverse,
                 leftObstacleDist,
                 rightObstacleDist,
                 forwardLeft,
@@ -760,7 +767,7 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
             angleRemaining = std::atan2(-remaining.y(), -remaining.x());
         }
         else{
-            angleRemaining = std::atan2(remaining.y(), remaining.x())
+            angleRemaining = std::atan2(remaining.y(), remaining.x());
         }
 
         normalizeAngle(angleRemaining);
