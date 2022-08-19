@@ -237,16 +237,12 @@ MoveBasic::MoveBasic(): tfBuffer(ros::Duration(3.0)),
     cmdPub = ros::Publisher(nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1));
     pathPub = ros::Publisher(nh.advertise<nav_msgs::Path>("/plan", 1));
 
-    obstacleDistPub =
-        ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/obstacle_distance", 1));
-    errorPub =
-        ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
+    obstacleDistPub =ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/obstacle_distance", 1));
+    errorPub =ros::Publisher(nh.advertise<geometry_msgs::Vector3>("/lateral_error", 1));
 
-    goalSub = nh.subscribe("/move_base_simple/goal", 1,
-                            &MoveBasic::goalCallback, this);
+    goalSub = nh.subscribe("/move_base_simple/goal", 1, &MoveBasic::goalCallback, this);
 
-    stopSub = nh.subscribe("/move_base/stop", 1,
-                            &MoveBasic::stopCallback, this);
+    stopSub = nh.subscribe("/move_base/stop", 1,&MoveBasic::stopCallback, this);
 
     ros::NodeHandle actionNh("");
 
@@ -486,10 +482,10 @@ void MoveBasic::executeAction(const move_base_msgs::MoveBaseGoalConstPtr& msg)
         // Initial rotation to face the goal
         double requestedYaw;
         if(drive_in_reverse){
-            angleRemaining = atan2(-linear.y(), -linear.x());
+            requestedYaw = atan2(-linear.y(), -linear.x());
         }
         else{
-            angleRemaining = atan2(linear.y(), linear.x());
+            requestedYaw = atan2(linear.y(), linear.x());
         }
 
         if (std::abs(requestedYaw) > angularTolerance) {
@@ -576,10 +572,6 @@ bool MoveBasic::rotate(double yaw, const std::string& drivingFrame)
     double x, y, currentYaw;
     getPose(poseDriving, x, y, currentYaw);
     double requestedYaw = currentYaw + yaw;
-
-    if(drive_in_reverse){
-        //requestedYaw += 3.14159265;
-    }
 
     normalizeAngle(requestedYaw);
     ROS_INFO("MoveBasic: Requested rotation %f", rad2deg(requestedYaw));
@@ -723,6 +715,9 @@ bool MoveBasic::moveLinear(tf2::Transform& goalInDriving,
                 forwardRight
             );
         }
+
+        ROS_INFO("OBSTACLEDIST: %f",obstacleDist);
+        
 
         double velocity = std::max(minLinearVelocity,
         std::min(std::min(std::abs(obstacleDist), std::abs(distRemaining)),
