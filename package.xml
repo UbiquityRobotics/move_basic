@@ -1,11 +1,12 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>move_basic</name>
-  <version>0.3.2</version>
+  <version>0.4.1</version>
   <description>Simple navigation package</description>
 
   <maintainer email="jimv@mrjim.com">Jim Vaughan</maintainer>
   <maintainer email="send2arohan@gmail.com">Rohan Agrawal</maintainer>
+  <maintainer email="tp@ubiquityrobotics.com">Teodor Janez Podobnik</maintainer>
 
   <license>BSD</license>
 
@@ -20,10 +21,14 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>visualization_msgs</depend>
+  <depend>dynamic_reconfigure</depend>
   <depend>std_msgs</depend>
   <depend>nav_core</depend>
   <depend>actionlib</depend>
   <depend>actionlib_msgs</depend>
   <depend>move_base_msgs</depend>
-</package>
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+  <depend>rostest</depend>
 
+</package>
